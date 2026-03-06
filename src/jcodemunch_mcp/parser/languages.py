@@ -1,5 +1,7 @@
 """Language registry with LanguageSpec definitions for all supported languages."""
 
+import logging
+import os
 from dataclasses import dataclass
 from typing import Optional
 
@@ -425,3 +427,53 @@ LANGUAGE_REGISTRY = {
     "c": C_SPEC,
     "perl": PERL_SPEC,
 }
+
+logger = logging.getLogger(__name__)
+
+
+def _apply_extra_extensions() -> None:
+    """Merge JCODEMUNCH_EXTRA_EXTENSIONS env var into LANGUAGE_EXTENSIONS.
+
+    Format: comma-separated `.ext:lang` pairs, e.g. `.cgi:perl,.psgi:perl`.
+    - Unknown language values (not in LANGUAGE_REGISTRY) are skipped with a WARNING.
+    - Malformed entries (missing colon, empty ext or lang) are skipped with a WARNING.
+    - Valid entries add or override entries in LANGUAGE_EXTENSIONS.
+    """
+    raw = os.environ.get("JCODEMUNCH_EXTRA_EXTENSIONS", "").strip()
+    if not raw:
+        return
+    for token in raw.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        if ":" not in token:
+            logger.warning(
+                "JCODEMUNCH_EXTRA_EXTENSIONS: malformed entry %r (expected .ext:lang) — skipped",
+                token,
+            )
+            continue
+        ext, _, lang = token.partition(":")
+        ext = ext.strip()
+        lang = lang.strip()
+        if not ext or not lang:
+            logger.warning(
+                "JCODEMUNCH_EXTRA_EXTENSIONS: malformed entry %r (empty ext or lang) — skipped",
+                token,
+            )
+            continue
+        if lang not in LANGUAGE_REGISTRY:
+            logger.warning(
+                "JCODEMUNCH_EXTRA_EXTENSIONS: unknown language %r in entry %r — skipped",
+                lang,
+                token,
+            )
+            continue
+        LANGUAGE_EXTENSIONS[ext] = lang
+        logger.debug(
+            "JCODEMUNCH_EXTRA_EXTENSIONS: registered %r → %r",
+            ext,
+            lang,
+        )
+
+
+_apply_extra_extensions()
