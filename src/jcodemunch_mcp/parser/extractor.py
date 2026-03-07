@@ -30,6 +30,8 @@ def parse_file(content: str, filename: str, language: str) -> list[Symbol]:
         symbols = _parse_elixir_symbols(source_bytes, filename)
     elif language == "blade":
         symbols = _parse_blade_symbols(source_bytes, filename)
+    elif language == "nix":
+        symbols = _parse_nix_symbols(source_bytes, filename)
     else:
         spec = LANGUAGE_REGISTRY[language]
         symbols = _parse_with_spec(source_bytes, filename, language, spec)
@@ -331,6 +333,15 @@ def _extract_name(node, spec: LanguageSpec, source_bytes: bytes) -> Optional[str
                 if child.type == "simple_identifier":
                     return source_bytes[child.start_byte:child.end_byte].decode("utf-8")
             return None
+
+    # Gleam: type_definition and type_alias names live inside a type_name child
+    if spec.ts_language == "gleam" and node.type in ("type_definition", "type_alias"):
+        for child in node.children:
+            if child.type == "type_name":
+                name_node = child.child_by_field_name("name")
+                if name_node:
+                    return source_bytes[name_node.start_byte:name_node.end_byte].decode("utf-8")
+        return None
 
     if node.type not in spec.name_fields:
         return None
@@ -1369,3 +1380,104 @@ def _parse_blade_symbols(source_bytes: bytes, filename: str) -> list[Symbol]:
 
     symbols.sort(key=lambda s: s.line)
     return symbols
+
+
+# ---------------------------------------------------------------------------
+# Nix custom symbol extractor
+# ---------------------------------------------------------------------------
+
+def _parse_nix_symbols(source_bytes: bytes, filename: str) -> list[Symbol]:
+    """Extract symbols from Nix expression files.
+
+    Nix is a pure expression language; all definitions are `binding` nodes
+    inside `binding_set` children of `let_expression` or `attrset_expression`.
+    We walk up to MAX_DEPTH levels deep and extract bindings whose attrpath is
+    a single identifier (i.e. not a dotted path like `environment.packages`).
+    Bindings whose RHS is a `function_expression` are classified as functions;
+    all others are classified as constants.
+    """
+    from tree_sitter_language_pack import get_parser as _get_parser
+    parser = _get_parser("nix")
+    tree = parser.parse(source_bytes)
+
+    symbols: list[Symbol] = []
+    _walk_nix_bindings(tree.root_node, source_bytes, filename, symbols, depth=0)
+    symbols.sort(key=lambda s: s.line)
+    return symbols
+
+
+def _walk_nix_bindings(node, source_bytes: bytes, filename: str, symbols: list, depth: int) -> None:
+    """Recursively walk Nix AST, extracting bindings as symbols."""
+    MAX_DEPTH = 4
+    if depth > MAX_DEPTH:
+        return
+
+    for child in node.children:
+        if child.type == "binding":
+            _extract_nix_binding(child, source_bytes, filename, symbols)
+        elif child.type in ("binding_set", "let_expression", "attrset_expression", "source_code"):
+            _walk_nix_bindings(child, source_bytes, filename, symbols, depth + 1)
+
+
+def _extract_nix_binding(node, source_bytes: bytes, filename: str, symbols: list) -> None:
+    """Extract a single Nix binding as a Symbol if it has a simple (non-dotted) name."""
+    attrpath_node = node.child_by_field_name("attrpath")
+    expr_node = node.child_by_field_name("expression")
+    if not attrpath_node or not expr_node:
+        return
+
+    # Only extract simple identifiers, skip dotted paths like `meta.description`
+    name_children = [c for c in attrpath_node.children if c.is_named]
+    if len(name_children) != 1 or name_children[0].type != "identifier":
+        return
+
+    name = source_bytes[name_children[0].start_byte:name_children[0].end_byte].decode("utf-8")
+
+    kind = "function" if expr_node.type == "function_expression" else "constant"
+
+    # Signature: binding up to (not including) the expression, + first line of RHS
+    eq_end = expr_node.start_byte
+    lhs = source_bytes[node.start_byte:eq_end].decode("utf-8").strip().rstrip("=").strip()
+    rhs_first = source_bytes[expr_node.start_byte:expr_node.end_byte].decode("utf-8").splitlines()[0].strip()
+    if len(rhs_first) > 60:
+        rhs_first = rhs_first[:60] + "..."
+    signature = f"{lhs} = {rhs_first}"
+
+    # Docstring: preceding comment sibling.
+    # In Nix, comments before the first binding in a binding_set appear as
+    # siblings of the binding_set itself (inside let_expression), not of the
+    # binding, so we also check the parent node's preceding sibling.
+    docstring = ""
+    comment_lines = []
+    prev = node.prev_named_sibling
+    while prev and prev.type == "comment":
+        comment_lines.insert(0, source_bytes[prev.start_byte:prev.end_byte].decode("utf-8"))
+        prev = prev.prev_named_sibling
+    if not comment_lines and node.prev_named_sibling is None and node.parent:
+        prev = node.parent.prev_named_sibling
+        while prev and prev.type == "comment":
+            comment_lines.insert(0, source_bytes[prev.start_byte:prev.end_byte].decode("utf-8"))
+            prev = prev.prev_named_sibling
+    if comment_lines:
+        docstring = _clean_comment_markers("\n".join(comment_lines))
+
+    sym_bytes = source_bytes[node.start_byte:node.end_byte]
+    row, _ = node.start_point
+    end_row, _ = node.end_point
+
+    symbols.append(Symbol(
+        id=make_symbol_id(filename, name, kind),
+        file=filename,
+        name=name,
+        qualified_name=name,
+        kind=kind,
+        language="nix",
+        signature=signature,
+        docstring=docstring,
+        parent=None,
+        line=row + 1,
+        end_line=end_row + 1,
+        byte_offset=node.start_byte,
+        byte_length=len(sym_bytes),
+        content_hash=compute_content_hash(sym_bytes),
+    ))

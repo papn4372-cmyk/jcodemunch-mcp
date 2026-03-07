@@ -82,6 +82,10 @@ LANGUAGE_EXTENSIONS = {
     ".blade.php": "blade",
     ".kt": "kotlin",
     ".kts": "kotlin",
+    ".gleam": "gleam",
+    ".sh": "bash",
+    ".bash": "bash",
+    ".nix": "nix",
 }
 
 
@@ -659,6 +663,71 @@ KOTLIN_SPEC = LanguageSpec(
 )
 
 
+# Gleam specification
+GLEAM_SPEC = LanguageSpec(
+    ts_language="gleam",
+    symbol_node_types={
+        "function": "function",
+        "type_definition": "type",
+        "type_alias": "type",
+        "constant": "constant",
+    },
+    name_fields={
+        "function": "name",    # identifier field
+        "constant": "name",    # identifier field
+        # type_definition and type_alias: name via type_name child, special-cased in extractor.py
+    },
+    param_fields={
+        "function": "parameters",
+    },
+    return_type_fields={
+        "function": "return_type",
+    },
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=["constant"],
+    type_patterns=["type_definition", "type_alias"],
+)
+
+
+# Bash specification
+BASH_SPEC = LanguageSpec(
+    ts_language="bash",
+    symbol_node_types={
+        "function_definition": "function",
+    },
+    name_fields={
+        "function_definition": "name",
+    },
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=["declaration_command"],  # readonly / declare -r
+    type_patterns=[],
+)
+
+
+# Nix specification
+# NOTE: Nix is an expression language; all constructs are `binding` nodes inside
+# binding_set children of let_expression or attrset_expression. Custom extraction
+# is performed in extractor.py via _parse_nix_symbols(). Fields below are empty.
+NIX_SPEC = LanguageSpec(
+    ts_language="nix",
+    symbol_node_types={},
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+)
+
+
 # Language registry
 LANGUAGE_REGISTRY = {
     "python": PYTHON_SPEC,
@@ -680,6 +749,9 @@ LANGUAGE_REGISTRY = {
     "gdscript": GDSCRIPT_SPEC,
     "blade": BLADE_SPEC,
     "kotlin": KOTLIN_SPEC,
+    "gleam": GLEAM_SPEC,
+    "bash": BASH_SPEC,
+    "nix": NIX_SPEC,
 }
 
 logger = logging.getLogger(__name__)

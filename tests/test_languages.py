@@ -1268,3 +1268,122 @@ def test_parse_kotlin():
     from jcodemunch_mcp.parser.languages import get_language_for_path
     assert get_language_for_path("build.gradle.kts") == "kotlin"
     assert get_language_for_path("Main.kt") == "kotlin"
+
+
+GLEAM_SOURCE = '''
+pub type Color {
+  Red
+  Green
+  Blue
+}
+
+pub type Alias = String
+
+pub const max_size: Int = 100
+
+// Greet a user
+pub fn greet(name: String) -> String {
+  "Hello, " <> name
+}
+
+fn helper(x: Int) -> Int {
+  x + 1
+}
+'''
+
+BASH_SOURCE = '''#!/bin/bash
+# Deploy the app
+function deploy() {
+  echo "Deploying $1"
+}
+
+# Build everything
+build() {
+  make all
+}
+
+readonly VERSION="1.0"
+'''
+
+NIX_SOURCE = '''
+let
+  # Greet someone
+  greet = name: "Hello, ${name}";
+  # Add two numbers
+  add = x: y: x + y;
+  version = "1.0";
+in { inherit greet; }
+'''
+
+
+def test_parse_gleam():
+    """Test Gleam parsing."""
+    symbols = parse_file(GLEAM_SOURCE, "app.gleam", "gleam")
+
+    typ = next((s for s in symbols if s.name == "Color"), None)
+    assert typ is not None
+    assert typ.kind == "type"
+    assert "Color" in typ.signature
+
+    alias = next((s for s in symbols if s.name == "Alias"), None)
+    assert alias is not None
+    assert alias.kind == "type"
+    assert "typealias" in alias.signature.lower() or "Alias" in alias.signature
+
+    const = next((s for s in symbols if s.name == "max_size"), None)
+    assert const is not None
+    assert const.kind == "constant"
+
+    fn = next((s for s in symbols if s.name == "greet"), None)
+    assert fn is not None
+    assert fn.kind == "function"
+    assert "String" in fn.signature
+    assert "Greet a user" in fn.docstring
+
+    priv = next((s for s in symbols if s.name == "helper"), None)
+    assert priv is not None
+    assert priv.kind == "function"
+
+    from jcodemunch_mcp.parser.languages import get_language_for_path
+    assert get_language_for_path("app.gleam") == "gleam"
+
+
+def test_parse_bash():
+    """Test Bash parsing."""
+    symbols = parse_file(BASH_SOURCE, "script.sh", "bash")
+
+    deploy = next((s for s in symbols if s.name == "deploy"), None)
+    assert deploy is not None
+    assert deploy.kind == "function"
+    assert "Deploy the app" in deploy.docstring
+
+    build = next((s for s in symbols if s.name == "build"), None)
+    assert build is not None
+    assert build.kind == "function"
+    assert "Build everything" in build.docstring
+
+    from jcodemunch_mcp.parser.languages import get_language_for_path
+    assert get_language_for_path("script.sh") == "bash"
+    assert get_language_for_path("script.bash") == "bash"
+
+
+def test_parse_nix():
+    """Test Nix parsing."""
+    symbols = parse_file(NIX_SOURCE, "default.nix", "nix")
+
+    greet = next((s for s in symbols if s.name == "greet"), None)
+    assert greet is not None
+    assert greet.kind == "function"
+    assert "Greet someone" in greet.docstring
+
+    add = next((s for s in symbols if s.name == "add"), None)
+    assert add is not None
+    assert add.kind == "function"
+    assert "Add two numbers" in add.docstring
+
+    version = next((s for s in symbols if s.name == "version"), None)
+    assert version is not None
+    assert version.kind == "constant"
+
+    from jcodemunch_mcp.parser.languages import get_language_for_path
+    assert get_language_for_path("default.nix") == "nix"
