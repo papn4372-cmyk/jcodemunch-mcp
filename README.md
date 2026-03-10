@@ -24,6 +24,7 @@ Precision context beats brute-force context.
 ![MCP](https://img.shields.io/badge/MCP-compatible-purple)
 ![Local-first](https://img.shields.io/badge/local--first-yes-brightgreen)
 ![Polyglot](https://img.shields.io/badge/parsing-tree--sitter-9cf)
+![jMRI](https://img.shields.io/badge/jMRI-Full-blueviolet)
 [![PyPI version](https://img.shields.io/pypi/v/jcodemunch-mcp)](https://pypi.org/project/jcodemunch-mcp/)
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/jcodemunch-mcp)](https://pypi.org/project/jcodemunch-mcp/)
 
@@ -99,11 +100,13 @@ They need structured retrieval.
 
 ## How it works
 
-1. **Discovery** — GitHub API or local directory walk  
-2. **Security filtering** — traversal protection, secret exclusion, binary detection  
-3. **Parsing** — tree-sitter AST extraction  
-4. **Storage** — JSON index + raw files stored locally (`~/.code-index/`)  
-5. **Retrieval** — O(1) byte-offset seeking via stable symbol IDs  
+jCodeMunch implements **[jMRI-Full](https://dev.to/jgravelle/your-ai-agent-is-dumpster-diving-through-your-code-326f)** — the open specification for structured retrieval MCP servers. jMRI-Full covers the full stack: discover, search, retrieve, and metadata operations with batch retrieval, hash-based drift detection, byte-offset addressing, and a complete `_meta` envelope on every call.
+
+1. **Discovery** — GitHub API or local directory walk
+2. **Security filtering** — traversal protection, secret exclusion, binary detection
+3. **Parsing** — tree-sitter AST extraction
+4. **Storage** — JSON index + raw files stored locally (`~/.code-index/`)
+5. **Retrieval** — O(1) byte-offset seeking via stable symbol IDs
 
 ### Stable Symbol IDs
 
