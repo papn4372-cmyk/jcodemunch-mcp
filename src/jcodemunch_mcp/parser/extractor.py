@@ -58,6 +58,8 @@ def parse_file(content: str, filename: str, language: str) -> list[Symbol]:
         symbols = _parse_julia_symbols(source_bytes, filename)
     elif language == "groovy":
         symbols = _parse_groovy_symbols(source_bytes, filename)
+    elif language == "autohotkey":
+        symbols = _parse_autohotkey_symbols(source_bytes, filename)
     else:
         spec = LANGUAGE_REGISTRY[language]
         symbols = _parse_with_spec(source_bytes, filename, language, spec)
@@ -3998,4 +4000,132 @@ def _parse_groovy_symbols(source_bytes: bytes, filename: str) -> list[Symbol]:
                     break
 
     _walk_commands(tree.root_node.children)
+    return symbols
+
+
+def _parse_autohotkey_symbols(source_bytes: bytes, filename: str) -> list[Symbol]:
+    """Extract symbols from AutoHotkey v2 source files using regex line-scanning.
+
+    AutoHotkey is not available in tree-sitter-language-pack, so this extractor
+    uses regex patterns with brace-depth tracking to identify:
+
+    - Top-level functions:  ``FuncName(params) {`` or ``FuncName(params) => expr``
+    - Classes:              ``class ClassName [extends Base] {``
+    - Methods:              indented ``[static] MethodName(params) {`` inside a class
+
+    Only declarations whose opening ``{`` (or fat-arrow ``=>``) appears on the
+    same line are recognised; next-line-brace style is not supported for
+    function/method detection (to avoid false positives on bare call sites).
+    Class declarations whose ``{`` appears on the following line ARE handled
+    correctly via speculative depth tracking.
+    """
+    import re
+
+    source = source_bytes.decode("utf-8", errors="replace")
+    lines = source.splitlines()
+    symbols: list[Symbol] = []
+
+    # class ClassName [extends Base] { optional comment
+    CLASS_RE = re.compile(
+        r'^\s*class\s+([A-Za-z_]\w*)(?:\s+extends\s+([A-Za-z_]\w*))?\s*(\{)?\s*(?:;.*)?$',
+        re.IGNORECASE,
+    )
+    # [static] FuncName(params) { or => (declaration, not a bare call)
+    FUNC_RE = re.compile(
+        r'^(\s*)(static\s+)?([A-Za-z_]\w*)\s*\(([^)]*)\)\s*(?:=>|\{)',
+        re.IGNORECASE,
+    )
+    _KEYWORDS = frozenset({
+        "if", "while", "for", "loop", "catch", "switch", "try", "else",
+        "class", "return", "throw", "until",
+    })
+
+    depth = 0
+    # Stack of (class_name, min_depth_inside_class)
+    class_stack: list[tuple[str, int]] = []
+
+    def _current_class() -> "Optional[str]":
+        return class_stack[-1][0] if class_stack else None
+
+    for line_no, raw_line in enumerate(lines, start=1):
+        # Strip inline ; comments for analysis (preserve original for nothing else)
+        stripped = re.sub(r'\s*;[^\n]*$', '', raw_line).rstrip()
+        if not stripped.strip():
+            continue
+
+        # ── Class declaration ─────────────────────────────────────────────
+        cm = CLASS_RE.match(stripped)
+        if cm:
+            class_name = cm.group(1)
+            extends = cm.group(2)
+            has_brace = cm.group(3) is not None
+            sig = f"class {class_name}"
+            if extends:
+                sig += f" extends {extends}"
+            sym = Symbol(
+                id=make_symbol_id(filename, class_name, "class"),
+                file=filename,
+                name=class_name,
+                qualified_name=class_name,
+                kind="class",
+                language="autohotkey",
+                signature=sig,
+                line=line_no,
+                end_line=line_no,
+            )
+            symbols.append(sym)
+            if has_brace:
+                depth += 1
+                class_stack.append((class_name, depth))
+            else:
+                # Brace expected on next non-blank line; speculatively reserve depth+1
+                class_stack.append((class_name, depth + 1))
+            continue
+
+        # ── Update brace depth for this line ──────────────────────────────
+        opens = stripped.count("{")
+        closes = stripped.count("}")
+        depth += opens - closes
+        # Pop classes whose body we have left
+        while class_stack and depth < class_stack[-1][1]:
+            class_stack.pop()
+
+        # ── Function / method declaration ─────────────────────────────────
+        fm = FUNC_RE.match(stripped)
+        if not fm:
+            continue
+        indent = fm.group(1)
+        is_static = bool(fm.group(2))
+        func_name = fm.group(3)
+        params = fm.group(4).strip()
+
+        if func_name.lower() in _KEYWORDS:
+            continue
+
+        cls = _current_class()
+        if cls and indent:
+            qualified = f"{cls}.{func_name}"
+            kind = "method"
+            parent_id = make_symbol_id(filename, cls, "class")
+        else:
+            qualified = func_name
+            kind = "function"
+            parent_id = None
+
+        prefix = "static " if is_static else ""
+        sig = f"{prefix}{func_name}({params})"
+        sym = Symbol(
+            id=make_symbol_id(filename, qualified, kind),
+            file=filename,
+            name=func_name,
+            qualified_name=qualified,
+            kind=kind,
+            language="autohotkey",
+            signature=sig,
+            parent=parent_id,
+            line=line_no,
+            end_line=line_no,
+        )
+        symbols.append(sym)
+
     return symbols

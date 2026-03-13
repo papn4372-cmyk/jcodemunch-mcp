@@ -129,6 +129,9 @@ LANGUAGE_EXTENSIONS = {
     # GraphQL
     ".graphql": "graphql",
     ".gql": "graphql",
+    # AutoHotkey v2
+    ".ahk": "autohotkey",
+    ".ahk2": "autohotkey",
 }
 
 
@@ -1138,6 +1141,26 @@ GRAPHQL_SPEC = LanguageSpec(
 )
 
 
+# AutoHotkey v2 specification
+# NOTE: AutoHotkey is not available in tree-sitter-language-pack and has no
+# published standalone tree-sitter Python binding.  Symbol extraction is
+# handled entirely by _parse_autohotkey_symbols() in extractor.py using
+# regex line-scanning with brace-depth tracking.  Fields below are
+# intentionally empty; ts_language is a placeholder never used.
+AHK_SPEC = LanguageSpec(
+    ts_language="autohotkey",
+    symbol_node_types={},
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+)
+
+
 # Language registry
 LANGUAGE_REGISTRY = {
     "python": PYTHON_SPEC,
@@ -1180,6 +1203,7 @@ LANGUAGE_REGISTRY = {
     "proto": PROTO_SPEC,
     "hcl": HCL_SPEC,
     "graphql": GRAPHQL_SPEC,
+    "autohotkey": AHK_SPEC,
 }
 
 logger = logging.getLogger(__name__)
