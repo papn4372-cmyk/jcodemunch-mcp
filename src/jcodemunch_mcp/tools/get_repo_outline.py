@@ -73,7 +73,7 @@ def get_repo_outline(
     }
     response_bytes = len(json.dumps(payload_content).encode("utf-8"))
     tokens_saved = estimate_savings(raw_bytes, response_bytes)
-    total_saved = record_savings(tokens_saved)
+    total_saved = record_savings(tokens_saved, tool_name="get_repo_outline")
 
     elapsed = (time.perf_counter() - start) * 1000
 

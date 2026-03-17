@@ -64,7 +64,7 @@ def get_file_outline(
     if not file_symbols:
         elapsed = (time.perf_counter() - start) * 1000
         tokens_saved = estimate_savings(raw_bytes, 0)
-        total_saved = record_savings(tokens_saved)
+        total_saved = record_savings(tokens_saved, tool_name="get_file_outline")
         return {
             "repo": f"{owner}/{name}",
             "file": file_path,
@@ -91,7 +91,7 @@ def get_file_outline(
     elapsed = (time.perf_counter() - start) * 1000
     response_bytes = len(json.dumps(symbols_output).encode("utf-8"))
     tokens_saved = estimate_savings(raw_bytes, response_bytes)
-    total_saved = record_savings(tokens_saved)
+    total_saved = record_savings(tokens_saved, tool_name="get_file_outline")
 
     return {
         "repo": f"{owner}/{name}",

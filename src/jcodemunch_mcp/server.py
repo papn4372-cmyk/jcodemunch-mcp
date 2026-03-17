@@ -26,6 +26,7 @@ from .tools.search_text import search_text
 from .tools.get_repo_outline import get_repo_outline
 from .tools.find_importers import find_importers
 from .tools.find_references import find_references
+from .tools.get_session_stats import get_session_stats
 from .tools.search_columns import search_columns
 from .tools.get_context_bundle import get_context_bundle
 from .parser.symbols import VALID_KINDS
@@ -266,8 +267,18 @@ async def list_tools() -> list[Tool]:
                     },
                     "max_results": {
                         "type": "integer",
-                        "description": "Maximum number of results to return",
+                        "description": "Maximum number of results to return (ignored when token_budget is set)",
                         "default": 10
+                    },
+                    "token_budget": {
+                        "type": "integer",
+                        "description": "Token budget cap. When set, results are sorted by score and greedily packed until the budget is exhausted. Overrides max_results. Reports token_budget, tokens_used, and tokens_remaining in _meta."
+                    },
+                    "detail_level": {
+                        "type": "string",
+                        "description": "Controls result verbosity. 'compact' returns id/name/kind/file/line only (~15 tokens each, best for broad discovery). 'standard' returns signatures and summaries (default). 'full' inlines source code, docstring, and end_line — equivalent to search + get_symbol in one call.",
+                        "enum": ["compact", "standard", "full"],
+                        "default": "standard"
                     },
                     "debug": {
                         "type": "boolean",
@@ -414,6 +425,14 @@ async def list_tools() -> list[Tool]:
                 "required": ["repo", "symbol_id"]
             }
         ),
+        Tool(
+            name="get_session_stats",
+            description="Get token savings stats for the current MCP session. Returns tokens saved and cost avoided (this session and all-time), per-tool breakdown, session duration, and cumulative totals. Use to see how much jCodeMunch has saved you.",
+            inputSchema={
+                "type": "object",
+                "properties": {},
+            }
+        ),
     ]
 
 
@@ -525,6 +544,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                         file_pattern=arguments.get("file_pattern"),
                         language=arguments.get("language"),
                         max_results=arguments.get("max_results", 10),
+                        token_budget=arguments.get("token_budget"),
+                        detail_level=arguments.get("detail_level", "standard"),
                         debug=arguments.get("debug", False),
                         storage_path=storage_path,
                     )
@@ -595,6 +616,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     get_context_bundle,
                     repo=arguments["repo"],
                     symbol_id=arguments["symbol_id"],
+                    storage_path=storage_path,
+                )
+            )
+        elif name == "get_session_stats":
+            result = await asyncio.to_thread(
+                functools.partial(
+                    get_session_stats,
                     storage_path=storage_path,
                 )
             )

@@ -10,10 +10,10 @@ from jcodemunch_mcp.server import server, list_tools, call_tool
 
 @pytest.mark.asyncio
 async def test_server_lists_all_tools():
-    """Test that server lists all 16 tools."""
+    """Test that server lists all 17 tools."""
     tools = await list_tools()
 
-    assert len(tools) == 16
+    assert len(tools) == 17
 
     names = {t.name for t in tools}
     expected = {
@@ -21,6 +21,7 @@ async def test_server_lists_all_tools():
         "get_file_outline", "get_file_content", "get_symbol", "get_symbols",
         "search_symbols", "invalidate_cache", "search_text", "get_repo_outline",
         "find_importers", "find_references", "search_columns", "get_context_bundle",
+        "get_session_stats",
     }
     assert names == expected
 
