@@ -151,15 +151,128 @@ class SQLiteIndexStore:
         file_mtimes: Optional[dict[str, float]] = None,
     ) -> CodeIndex:
         """Save a full index to SQLite. Replaces all existing data."""
-        raise NotImplementedError
+        normalized_source_files = sorted(dict.fromkeys(source_files or list(raw_files.keys())))
+
+        if file_hashes is None:
+            file_hashes = {fp: _file_hash(content) for fp, content in raw_files.items()}
+
+        # Serialize symbols
+        serialized_symbols = [
+            {"id": s.id, "file": s.file, "name": s.name, "qualified_name": s.qualified_name,
+             "kind": s.kind, "language": s.language, "signature": s.signature,
+             "docstring": s.docstring, "summary": s.summary, "decorators": s.decorators,
+             "keywords": s.keywords, "parent": s.parent, "line": s.line,
+             "end_line": s.end_line, "byte_offset": s.byte_offset,
+             "byte_length": s.byte_length, "content_hash": s.content_hash}
+            for s in symbols
+        ]
+
+        # Compute languages from file_languages if not provided
+        file_languages = file_languages or {}
+        if not languages and file_languages:
+            lang_counts: dict[str, int] = {}
+            for lang in file_languages.values():
+                lang_counts[lang] = lang_counts.get(lang, 0) + 1
+            languages = lang_counts
+
+        index = CodeIndex(
+            repo=f"{owner}/{name}", owner=owner, name=name,
+            indexed_at=datetime.now().isoformat(),
+            source_files=normalized_source_files,
+            languages=languages or {},
+            symbols=serialized_symbols,
+            index_version=INDEX_VERSION,
+            file_hashes=file_hashes,
+            git_head=git_head,
+            file_summaries=file_summaries or {},
+            source_root=source_root,
+            file_languages=file_languages,
+            display_name=display_name or name,
+            imports=imports if imports is not None else {},
+            context_metadata=context_metadata or {},
+            file_blob_shas=file_blob_shas or {},
+            file_mtimes=file_mtimes or {},
+        )
+
+        db_path = self._db_path(owner, name)
+        conn = self._connect(db_path)
+        try:
+            conn.execute("BEGIN")
+            conn.execute("DELETE FROM symbols")
+            conn.execute("DELETE FROM files")
+            conn.execute("DELETE FROM meta")
+
+            self._write_meta(conn, index)
+
+            # Insert symbols
+            conn.executemany(
+                "INSERT INTO symbols (id, file, name, kind, signature, summary, "
+                "docstring, line, end_line, byte_offset, byte_length, parent, data) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [self._symbol_to_row(s) for s in symbols],
+            )
+
+            # Insert files (batch via executemany)
+            conn.executemany(
+                "INSERT OR REPLACE INTO files (path, hash, mtime_ns, language, "
+                "summary, blob_sha, imports) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        fp,
+                        file_hashes.get(fp, ""),
+                        (file_mtimes or {}).get(fp),
+                        (file_languages or {}).get(fp, ""),
+                        (file_summaries or {}).get(fp, ""),
+                        (file_blob_shas or {}).get(fp, ""),
+                        json.dumps((imports or {}).get(fp, [])),
+                    )
+                    for fp in normalized_source_files
+                ],
+            )
+
+            conn.commit()
+        finally:
+            conn.close()
+
+        # Write raw content files
+        content_dir = self._content_dir(owner, name)
+        content_dir.mkdir(parents=True, exist_ok=True)
+        for file_path, content in raw_files.items():
+            file_dest = self._safe_content_path(content_dir, file_path)
+            if not file_dest:
+                raise ValueError(f"Unsafe file path in raw_files: {file_path}")
+            file_dest.parent.mkdir(parents=True, exist_ok=True)
+            self._write_cached_text(file_dest, content)
+
+        return index
 
     def load_index(self, owner: str, name: str) -> Optional[CodeIndex]:
         """Load index from SQLite, constructing a CodeIndex dataclass."""
-        raise NotImplementedError
+        db_path = self._db_path(owner, name)
+        if not db_path.exists():
+            return None
+
+        conn = self._connect(db_path)
+        try:
+            meta = self._read_meta(conn)
+            if not meta:
+                return None
+
+            stored_version = int(meta.get("index_version", "0"))
+            if stored_version > INDEX_VERSION:
+                logger.warning("Index version %d > current %d for %s/%s", stored_version, INDEX_VERSION, owner, name)
+                return None
+
+            symbol_rows = conn.execute("SELECT * FROM symbols").fetchall()
+            file_rows = conn.execute("SELECT * FROM files").fetchall()
+
+            return self._build_index_from_rows(meta, symbol_rows, file_rows, owner, name)
+        finally:
+            conn.close()
 
     def has_index(self, owner: str, name: str) -> bool:
         """Return True if a .db file exists for this repo."""
-        raise NotImplementedError
+        return self._db_path(owner, name).exists()
 
     def incremental_save(
         self,
@@ -267,30 +380,130 @@ class SQLiteIndexStore:
 
     def _symbol_to_row(self, symbol: Symbol) -> tuple:
         """Convert a Symbol to a row tuple for INSERT."""
-        raise NotImplementedError
+        data = json.dumps({
+            "qualified_name": symbol.qualified_name,
+            "language": symbol.language,
+            "decorators": symbol.decorators,
+            "keywords": symbol.keywords,
+            "content_hash": symbol.content_hash,
+            "ecosystem_context": getattr(symbol, "ecosystem_context", ""),
+        })
+        return (
+            symbol.id, symbol.file, symbol.name, symbol.kind,
+            symbol.signature, symbol.summary, symbol.docstring,
+            symbol.line, symbol.end_line,
+            symbol.byte_offset, symbol.byte_length,
+            symbol.parent, data,
+        )
 
     def _symbol_dict_to_row(self, d: dict) -> tuple:
         """Convert a serialized symbol dict to a row tuple for INSERT."""
-        raise NotImplementedError
+        data = json.dumps({
+            "qualified_name": d.get("qualified_name", d.get("name", "")),
+            "language": d.get("language", ""),
+            "decorators": d.get("decorators", []),
+            "keywords": d.get("keywords", []),
+            "content_hash": d.get("content_hash", ""),
+            "ecosystem_context": d.get("ecosystem_context", ""),
+        })
+        return (
+            d["id"], d["file"], d["name"], d.get("kind", ""),
+            d.get("signature", ""), d.get("summary", ""), d.get("docstring", ""),
+            d.get("line", 0), d.get("end_line", 0),
+            d.get("byte_offset", 0), d.get("byte_length", 0),
+            d.get("parent"), data,
+        )
 
     def _row_to_symbol_dict(self, row: sqlite3.Row) -> dict:
         """Convert a database row to a symbol dict (matches CodeIndex.symbols format)."""
-        raise NotImplementedError
+        data = json.loads(row["data"]) if row["data"] else {}
+        return {
+            "id": row["id"],
+            "file": row["file"],
+            "name": row["name"],
+            "kind": row["kind"] or "",
+            "signature": row["signature"] or "",
+            "summary": row["summary"] or "",
+            "docstring": row["docstring"] or "",
+            "qualified_name": data.get("qualified_name", row["name"]),
+            "language": data.get("language", ""),
+            "decorators": data.get("decorators", []),
+            "keywords": data.get("keywords", []),
+            "parent": row["parent"],
+            "line": row["line"] or 0,
+            "end_line": row["end_line"] or 0,
+            "byte_offset": row["byte_offset"] or 0,
+            "byte_length": row["byte_length"] or 0,
+            "content_hash": data.get("content_hash", ""),
+            "ecosystem_context": data.get("ecosystem_context", ""),
+        }
 
     def _build_index_from_rows(
         self, meta: dict, symbol_rows: list, file_rows: list, owner: str, name: str,
     ) -> CodeIndex:
         """Build a CodeIndex from pre-fetched meta dict, symbol rows, and file rows.
         Used by both load_index and incremental_save to avoid redundant queries."""
-        raise NotImplementedError
+        symbols = [self._row_to_symbol_dict(r) for r in symbol_rows]
+        source_files = sorted(r["path"] for r in file_rows)
+        file_hashes = {r["path"]: r["hash"] for r in file_rows if r["hash"]}
+        file_mtimes = {r["path"]: r["mtime_ns"] for r in file_rows if r["mtime_ns"] is not None}
+        file_languages = {r["path"]: r["language"] for r in file_rows if r["language"]}
+        file_summaries = {r["path"]: r["summary"] for r in file_rows if r["summary"]}
+        file_blob_shas = {r["path"]: r["blob_sha"] for r in file_rows if r["blob_sha"]}
+        imports = {}
+        for r in file_rows:
+            if r["imports"]:
+                parsed = json.loads(r["imports"])
+                if parsed:
+                    imports[r["path"]] = parsed
+
+        languages = json.loads(meta.get("languages", "{}"))
+        context_metadata = json.loads(meta.get("context_metadata", "{}"))
+
+        return CodeIndex(
+            repo=meta.get("repo", f"{owner}/{name}"),
+            owner=meta.get("owner", owner),
+            name=meta.get("name", name),
+            indexed_at=meta.get("indexed_at", ""),
+            source_files=source_files,
+            languages=languages,
+            symbols=symbols,
+            index_version=int(meta.get("index_version", "0")),
+            file_hashes=file_hashes,
+            git_head=meta.get("git_head", ""),
+            file_summaries=file_summaries,
+            source_root=meta.get("source_root", ""),
+            file_languages=file_languages,
+            display_name=meta.get("display_name", name),
+            imports=imports,
+            context_metadata=context_metadata,
+            file_blob_shas=file_blob_shas,
+            file_mtimes=file_mtimes,
+        )
 
     def _write_meta(self, conn: sqlite3.Connection, index: CodeIndex) -> None:
         """Write all meta keys for an index."""
-        raise NotImplementedError
+        meta = {
+            "repo": index.repo,
+            "owner": index.owner,
+            "name": index.name,
+            "indexed_at": index.indexed_at,
+            "index_version": str(index.index_version),
+            "git_head": index.git_head,
+            "source_root": index.source_root,
+            "display_name": index.display_name,
+            "languages": json.dumps(index.languages),
+            "context_metadata": json.dumps(index.context_metadata) if index.context_metadata else "{}",
+        }
+        conn.executemany(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+            list(meta.items()),
+        )
 
     def _read_meta(self, conn: sqlite3.Connection) -> dict:
         """Read all meta keys into a dict."""
-        raise NotImplementedError
+        rows = conn.execute("SELECT key, value FROM meta").fetchall()
+        return {row["key"]: row["value"] for row in rows}
 
     def _repo_slug(self, owner: str, name: str) -> str:
         """Stable slug for file paths (same as IndexStore._repo_slug)."""
