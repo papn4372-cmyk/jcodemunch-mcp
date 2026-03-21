@@ -815,4 +815,83 @@ class SQLiteIndexStore:
 
     def migrate_from_json(self, json_path: Path, owner: str, name: str) -> Optional[CodeIndex]:
         """Read a JSON index file and populate the SQLite database."""
-        raise NotImplementedError
+        if not json_path.exists():
+            return None
+
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            logger.warning("Failed to read JSON index for migration: %s", json_path)
+            return None
+
+        # Populate SQLite from JSON data
+        db_path = self._db_path(owner, name)
+        conn = self._connect(db_path)
+        try:
+            # Write meta
+            meta_keys = {
+                "repo": data.get("repo", f"{owner}/{name}"),
+                "owner": data.get("owner", owner),
+                "name": data.get("name", name),
+                "indexed_at": data.get("indexed_at", ""),
+                "index_version": str(data.get("index_version", INDEX_VERSION)),
+                "git_head": data.get("git_head", ""),
+                "source_root": data.get("source_root", ""),
+                "display_name": data.get("display_name", name),
+                "languages": json.dumps(data.get("languages", {})),
+                "context_metadata": json.dumps(data.get("context_metadata", {})),
+            }
+            conn.executemany(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+                list(meta_keys.items()),
+            )
+
+            # Write symbols
+            symbols = data.get("symbols", [])
+            if symbols:
+                conn.executemany(
+                    "INSERT OR REPLACE INTO symbols (id, file, name, kind, signature, summary, "
+                    "docstring, line, end_line, byte_offset, byte_length, parent, data) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [self._symbol_dict_to_row(s) for s in symbols],
+                )
+
+            # Write files
+            file_hashes = data.get("file_hashes", {})
+            file_mtimes = data.get("file_mtimes", {})
+            file_languages = data.get("file_languages", {})
+            file_summaries = data.get("file_summaries", {})
+            file_blob_shas = data.get("file_blob_shas", {})
+            imports = data.get("imports", {})
+
+            for fp in data.get("source_files", []):
+                conn.execute(
+                    "INSERT OR REPLACE INTO files (path, hash, mtime_ns, language, "
+                    "summary, blob_sha, imports) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        fp,
+                        file_hashes.get(fp, ""),
+                        file_mtimes.get(fp),
+                        file_languages.get(fp, ""),
+                        file_summaries.get(fp, ""),
+                        file_blob_shas.get(fp, ""),
+                        json.dumps(imports.get(fp, [])),
+                    ),
+                )
+
+            conn.commit()
+        finally:
+            conn.close()
+
+        # Rename original JSON to .migrated
+        migrated_path = json_path.with_suffix(".json.migrated")
+        json_path.rename(migrated_path)
+
+        # Clean up sidecars (naming: {slug}.meta.json, {slug}.json.sha256, {slug}.json.lock)
+        slug = json_path.stem  # e.g. "local-test-abc123"
+        for sidecar_name in (f"{slug}.meta.json", f"{slug}.json.sha256", f"{slug}.json.lock"):
+            sidecar = json_path.parent / sidecar_name
+            sidecar.unlink(missing_ok=True)
+
+        return self.load_index(owner, name)
