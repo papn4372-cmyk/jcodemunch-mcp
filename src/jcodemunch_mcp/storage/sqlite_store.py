@@ -785,7 +785,9 @@ class SQLiteIndexStore:
                 if parsed:
                     imports[r["path"]] = parsed
         if not imports:
-            imports = None
+            # v3 format had no imports field — preserve None for backward compatibility
+            index_version = int(meta.get("index_version", "0"))
+            imports = None if index_version < 4 else {}
 
         languages = json.loads(meta.get("languages", "{}"))
         context_metadata = json.loads(meta.get("context_metadata", "{}"))

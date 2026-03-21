@@ -791,11 +791,16 @@ class TestIndexVersioning:
             languages={"python": 1},
         )
 
-        # Manually bump the version in the JSON file to a future version
-        index_path = tmp_path / "ver-test.json"
-        data = json.loads(index_path.read_text(encoding="utf-8"))
-        data["index_version"] = INDEX_VERSION + 100
-        index_path.write_text(json.dumps(data), encoding="utf-8")
+        # Manually bump the version in the SQLite database to a future version
+        db_path = store._sqlite._db_path("ver", "test")
+        conn = store._sqlite._connect(db_path)
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+                ("index_version", str(INDEX_VERSION + 100)),
+            )
+        finally:
+            conn.close()
 
         loaded = store.load_index("ver", "test")
         assert loaded is None, "Future version should not be loadable"

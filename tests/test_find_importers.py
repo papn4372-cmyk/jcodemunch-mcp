@@ -410,16 +410,21 @@ class TestFindImporters:
         result = index_folder(str(src), use_ai_summaries=False, storage_path=str(store))
         assert result["success"] is True
 
-        # Simulate a pre-v1.3.0 index by removing the 'imports' key from JSON
+        # Simulate a pre-v1.3.0 index (v3 format) by:
+        # 1. Removing all imports from the files table
+        # 2. Setting index_version to 0 (v3 didn't store version)
         import json
         store_obj = IndexStore(base_path=str(store))
         owner, name = result["repo"].split("/", 1)
-        index_path = store_obj._index_path(owner, name)
-        with open(index_path, "r") as f:
-            data = json.load(f)
-        data.pop("imports", None)  # Remove imports key to simulate old index
-        with open(index_path, "w") as f:
-            json.dump(data, f)
+        db_path = store_obj._sqlite._db_path(owner, name)
+        conn = store_obj._sqlite._connect(db_path)
+        try:
+            # Clear all imports in files table
+            conn.execute("UPDATE files SET imports = ''")
+            # Set index_version to 0 to simulate v3 (no imports field)
+            conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('index_version', '0')")
+        finally:
+            conn.close()
 
         importers = find_importers(
             repo=result["repo"],

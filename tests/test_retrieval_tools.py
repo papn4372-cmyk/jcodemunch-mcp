@@ -70,11 +70,18 @@ def test_get_repo_outline_counts_no_symbol_files(tmp_path):
 
 
 def _backdate_index(tmp_path, owner, name, days):
-    """Overwrite indexed_at in the stored JSON to simulate an old index."""
-    index_file = tmp_path / f"{owner}-{name}.json"
-    data = json.loads(index_file.read_text())
-    data["indexed_at"] = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    index_file.write_text(json.dumps(data))
+    """Overwrite indexed_at in the stored SQLite index to simulate an old index."""
+    store = IndexStore(base_path=str(tmp_path))
+    db_path = store._sqlite._db_path(owner, name)
+    old_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    conn = store._sqlite._connect(db_path)
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+            ("indexed_at", old_date),
+        )
+    finally:
+        conn.close()
 
 
 def test_get_repo_outline_staleness_warning_when_old(tmp_path):
