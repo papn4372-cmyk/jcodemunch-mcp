@@ -33,13 +33,18 @@ def _tokenize(text: str) -> list[str]:
 
 
 def _sym_tokens(sym: dict) -> list[str]:
-    """Weighted token bag for a symbol (repetition = field weight)."""
+    """Weighted token bag for a symbol (repetition = field weight).
+    Cached on the symbol dict to avoid re-tokenizing across calls."""
+    cached = sym.get("_tokens")
+    if cached is not None:
+        return cached
     tokens: list[str] = []
     tokens += _tokenize(sym.get("name", "")) * _FIELD_REPS["name"]
     tokens += [kw.lower() for kw in sym.get("keywords", [])] * _FIELD_REPS["keywords"]
     tokens += _tokenize(sym.get("signature", "")) * _FIELD_REPS["signature"]
     tokens += _tokenize(sym.get("summary", "")) * _FIELD_REPS["summary"]
     tokens += _tokenize(sym.get("docstring", "")) * _FIELD_REPS["docstring"]
+    sym["_tokens"] = tokens
     return tokens
 
 

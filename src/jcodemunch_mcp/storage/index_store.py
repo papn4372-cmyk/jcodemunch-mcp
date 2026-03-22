@@ -88,6 +88,8 @@ class CodeIndex:
         # Build O(1) lookup structures once at load time.
         self._symbol_index: dict[str, dict] = {s["id"]: s for s in self.symbols if "id" in s}
         self._source_file_set: set[str] = set(self.source_files)
+        # Lazy BM25 cache — populated on first search, invalidated by new CodeIndex
+        self._bm25_cache: dict = {}
 
     def get_symbol(self, symbol_id: str) -> Optional[dict]:
         """Find a symbol by ID (O(1))."""
