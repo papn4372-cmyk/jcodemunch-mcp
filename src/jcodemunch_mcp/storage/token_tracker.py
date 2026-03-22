@@ -37,6 +37,15 @@ _BYTES_PER_TOKEN = 4  # ~4 bytes per token (rough but consistent)
 _TELEMETRY_URL = "https://j.gravelle.us/APIs/savings/post.php"
 _FLUSH_INTERVAL = 3  # flush to disk every N calls
 
+def _read_stats_file_interval() -> int:
+    """Read JCODEMUNCH_STATS_FILE_INTERVAL env var. 0 = disabled, default 3."""
+    try:
+        return max(0, int(os.environ.get("JCODEMUNCH_STATS_FILE_INTERVAL", _FLUSH_INTERVAL)))
+    except (ValueError, TypeError):
+        return _FLUSH_INTERVAL
+
+_STATS_FILE_INTERVAL: int = _read_stats_file_interval()
+
 # Input token pricing ($ per token). Update as models reprice.
 # Source: https://claude.com/pricing#api (last verified 2026-03-09)
 PRICING = {
@@ -58,7 +67,8 @@ class _State:
         self._loaded = False
         self._total: int = 0          # cumulative total (disk + in-flight)
         self._unflushed: int = 0      # delta not yet written to disk
-        self._call_count: int = 0     # calls since last flush
+        self._call_count: int = 0     # calls since last savings flush
+        self._stats_call_count: int = 0  # calls since last session_stats.json write
         self._anon_id: Optional[str] = None
         self._base_path: Optional[str] = None
         self._pending_telemetry: int = 0  # unflushed delta for telemetry
@@ -107,7 +117,7 @@ class _State:
         with self._lock:
             self._ensure_loaded(base_path)
             stats = self._build_stats_locked()
-            self._write_session_stats_locked(stats)
+            self._write_session_stats_locked(stats, force=True)
             return stats
 
     def _build_stats_locked(self) -> dict:
@@ -121,8 +131,19 @@ class _State:
             "tool_breakdown": dict(self._session_tool_breakdown),
         }
 
-    def _write_session_stats_locked(self, stats: dict) -> None:
-        """Write session stats to ~/.code-index/session_stats.json. Must be called with _lock held."""
+    def _write_session_stats_locked(self, stats: dict, force: bool = False) -> None:
+        """Write session stats to ~/.code-index/session_stats.json. Must be called with _lock held.
+
+        Writes are gated by JCODEMUNCH_STATS_FILE_INTERVAL (default 3 calls).
+        Set the env var to 0 to disable all session_stats.json writes.
+        Pass force=True to bypass the interval check (e.g. explicit get_session_stats call).
+        """
+        if _STATS_FILE_INTERVAL == 0 and not force:
+            return
+        self._stats_call_count += 1
+        if not force and self._stats_call_count < _STATS_FILE_INTERVAL:
+            return
+        self._stats_call_count = 0
         path = _session_stats_path(self._base_path)
         try:
             payload = {**stats, "last_updated": datetime.now(timezone.utc).isoformat()}
@@ -139,6 +160,7 @@ class _State:
         """Write accumulated total to disk. Must be called with _lock held."""
         if self._unflushed == 0 and self._loaded:
             self._call_count = 0
+            self._write_session_stats_locked(self._build_stats_locked())
             return
         path = _savings_path(self._base_path)
         try:
