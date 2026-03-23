@@ -1,9 +1,9 @@
 # jcodemunch-mcp — Project Brief
 
 ## Current State
-- **Version:** 1.10.17 (published to PyPI)
+- **Version:** 1.10.18 (published to PyPI)
 - **INDEX_VERSION:** 4
-- **Tests:** 961 passed, 7 skipped
+- **Tests:** 983 passed, 7 skipped
 - **Python:** >=3.10
 
 ## Key Files
@@ -124,6 +124,7 @@ Custom parsers (tree-sitter grammar lacks clean named fields):
 | #80 | briepace | Folder indexing speedup: prune dirnames[:] at os.walk level → merged v1.2.8 |
 | #82 | paperlinguist | SQL language support with dbt Jinja preprocessing → merged v1.2.6 |
 | #109 | DrHayt | Fix SKIP_DIRS_REGEX missing `$` anchor — prevented prefix-match pruning (e.g. `proto` eating `protoc-gen-*`) → merged |
+| #158 | iEdgir01 | JCODEMUNCH_PATH_MAP — cross-platform path prefix remapping; merged v1.10.18 |
 
 
 ## Roadmap / Backlog
@@ -196,6 +197,7 @@ Custom parsers (tree-sitter grammar lacks clean named fields):
 | 1.10.15 | Perf: suppress_meta param on all 25 tools — add suppress_meta=true to strip _meta envelope (~100-200 tokens/call savings); injected at list_tools() time via single property dict, stripped in call_tool dispatcher; 3 new tests — requested by Mharbulous (#142) |
 | 1.10.16 | Docs: expand tool reference in USER_GUIDE.md, QUICKSTART.md, and README.md with new tools; add AGENT_HOOKS.md cross-links (PR #155 by gokhanozdemir) |
 | 1.10.17 | CLI: `index-file <path>` subcommand — re-index a single file from the shell; enables PostToolUse hooks for automatic index freshness after agent edits (PR #156 by gokhanozdemir) |
+| 1.10.18 | Feat: JCODEMUNCH_PATH_MAP env var — cross-platform path prefix remapping so an index built on one machine (e.g. Linux /home/user) can be reused on another (e.g. Windows C:\Users\user) without re-indexing; directory-boundary-aware matching, mixed-separator support, =signs in paths; 22 tests — contributed by iEdgir01 (PR #158); fix: remap() returns path unchanged on no-match (prevented Windows separator regression) |
 
 ## Maintenance Practices
 
