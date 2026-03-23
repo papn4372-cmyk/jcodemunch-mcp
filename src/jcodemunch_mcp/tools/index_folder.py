@@ -169,14 +169,9 @@ def discover_local_files(
         "file_limit": 0,
     }
 
-    # Load all .gitignore files in the tree (root + all subdirectories)
-    gitignore_specs = _load_all_gitignores(root)
-
-    # Pre-compute string-based gitignore specs for the hot loop (avoids
-    # Path.relative_to() + exception handling per file per spec).
-    gitignore_str_specs: list[tuple[str, pathspec.PathSpec]] = [
-        (str(d) + os.sep, spec) for d, spec in gitignore_specs.items()
-    ] if gitignore_specs else []
+    # Pre-compute string-based gitignore specs — built incrementally during
+    # the walk below (P8: single os.walk pass instead of two).
+    gitignore_str_specs: list[tuple[str, pathspec.PathSpec]] = []
 
     # Pre-compute root path strings (root is already resolved above).
     # Normalized variants use os.path.normcase for case-insensitive comparison
@@ -195,86 +190,104 @@ def discover_local_files(
         except Exception:
             pass
 
+    for dirpath, dirnames, filenames in os.walk(str(root), followlinks=False):
+        # Prune directories that should always be skipped before descending.
+        dirnames[:] = [d for d in dirnames if not SKIP_DIRS_REGEX.match(d)]
+        dpath = Path(dirpath)
 
-    for file_path in get_filtered_files(str(folder_path)):
-        # Symlink protection
-        if not follow_symlinks and file_path.is_symlink():
-            skip_counts["symlink"] += 1
-            logger.debug("SKIP symlink: %s", file_path)
-            continue
-        if file_path.is_symlink() and is_symlink_escape(root, file_path):
-            skip_counts["symlink_escape"] += 1
-            warnings.append(f"Skipped symlink escape: {file_path}")
-            continue
+        # Load .gitignore for this directory BEFORE filtering its files so
+        # that patterns defined here apply to siblings in the same directory.
+        if ".gitignore" in filenames:
+            gitignore_path = dpath / ".gitignore"
+            try:
+                content = gitignore_path.read_text(encoding="utf-8", errors="replace")
+                spec = pathspec.PathSpec.from_lines("gitignore", content.splitlines())
+                gitignore_str_specs.append((str(dpath.resolve()) + os.sep, spec))
+            except Exception:
+                pass
 
-        # Resolve once per file — reused for traversal check, relative path,
-        # and gitignore matching (was resolved 2-3x before this optimization).
-        try:
-            resolved = file_path.resolve()
-        except OSError:
-            skip_counts["unreadable"] += 1
-            logger.debug("SKIP unreadable (resolve failed): %s", file_path)
-            continue
-        resolved_str = str(resolved)
-        resolved_norm = os.path.normcase(resolved_str)
-
-        # Path traversal check (same logic as validate_path but avoids
-        # re-resolving root on every iteration). Uses normcase so the check
-        # is case-insensitive on Windows.
-        if not (resolved_norm == root_str_norm or resolved_norm.startswith(root_prefix_norm)):
-            skip_counts["path_traversal"] += 1
-            warnings.append(f"Skipped path traversal: {file_path}")
-            continue
-
-        # Get relative path via string slicing (avoids Path.relative_to)
-        rel_path = resolved_str[len(root_prefix):].replace("\\", "/") if resolved_norm != root_str_norm else ""
-        if not rel_path:
-            continue
-
-        # .gitignore matching (string-based, avoids Path.relative_to per spec)
-        if gitignore_str_specs and _is_gitignored_fast(resolved_str, gitignore_str_specs):
-            skip_counts["gitignore"] += 1
-            logger.debug("SKIP gitignore: %s", rel_path)
-            continue
-
-        # Extra ignore patterns
-        if extra_spec and extra_spec.match_file(rel_path):
-            skip_counts["extra_ignore"] += 1
-            logger.debug("SKIP extra_ignore: %s", rel_path)
-            continue
-
-        # Secret detection
-        if is_secret_file(rel_path):
-            skip_counts["secret"] += 1
-            warnings.append(f"Skipped secret file: {rel_path}")
-            continue
-
-        # Extension filter
-        ext = file_path.suffix
-        if ext not in LANGUAGE_EXTENSIONS and get_language_for_path(str(file_path)) is None:
-            skip_counts["wrong_extension"] += 1
-            logger.debug("SKIP wrong_extension: %s", rel_path)
-            continue
-
-        # Size limit
-        try:
-            if file_path.stat().st_size > max_size:
-                skip_counts["too_large"] += 1
-                logger.debug("SKIP too_large: %s", rel_path)
+        for filename in filenames:
+            if SKIP_FILES_REGEX.search(filename):
                 continue
-        except OSError:
-            skip_counts["unreadable"] += 1
-            logger.debug("SKIP unreadable (stat failed): %s", rel_path)
-            continue
+            file_path = dpath / filename
+            # Symlink protection
+            if not follow_symlinks and file_path.is_symlink():
+                skip_counts["symlink"] += 1
+                logger.debug("SKIP symlink: %s", file_path)
+                continue
+            if file_path.is_symlink() and is_symlink_escape(root, file_path):
+                skip_counts["symlink_escape"] += 1
+                warnings.append(f"Skipped symlink escape: {file_path}")
+                continue
 
-        # Binary detection (content sniff for files with source extensions)
-        if is_binary_file(file_path):
-            skip_counts["binary"] += 1
-            warnings.append(f"Skipped binary file: {rel_path}")
-            continue
+            # Resolve once per file — reused for traversal check, relative path,
+            # and gitignore matching (was resolved 2-3x before this optimization).
+            try:
+                resolved = file_path.resolve()
+            except OSError:
+                skip_counts["unreadable"] += 1
+                logger.debug("SKIP unreadable (resolve failed): %s", file_path)
+                continue
+            resolved_str = str(resolved)
+            resolved_norm = os.path.normcase(resolved_str)
 
-        logger.debug("ACCEPT: %s", rel_path)
-        files.append(file_path)
+            # Path traversal check (same logic as validate_path but avoids
+            # re-resolving root on every iteration). Uses normcase so the check
+            # is case-insensitive on Windows.
+            if not (resolved_norm == root_str_norm or resolved_norm.startswith(root_prefix_norm)):
+                skip_counts["path_traversal"] += 1
+                warnings.append(f"Skipped path traversal: {file_path}")
+                continue
+
+            # Get relative path via string slicing (avoids Path.relative_to)
+            rel_path = resolved_str[len(root_prefix):].replace("\\", "/") if resolved_norm != root_str_norm else ""
+            if not rel_path:
+                continue
+
+            # .gitignore matching (string-based, avoids Path.relative_to per spec)
+            if gitignore_str_specs and _is_gitignored_fast(resolved_str, gitignore_str_specs):
+                skip_counts["gitignore"] += 1
+                logger.debug("SKIP gitignore: %s", rel_path)
+                continue
+
+            # Extra ignore patterns
+            if extra_spec and extra_spec.match_file(rel_path):
+                skip_counts["extra_ignore"] += 1
+                logger.debug("SKIP extra_ignore: %s", rel_path)
+                continue
+
+            # Secret detection
+            if is_secret_file(rel_path):
+                skip_counts["secret"] += 1
+                warnings.append(f"Skipped secret file: {rel_path}")
+                continue
+
+            # Extension filter
+            ext = file_path.suffix
+            if ext not in LANGUAGE_EXTENSIONS and get_language_for_path(str(file_path)) is None:
+                skip_counts["wrong_extension"] += 1
+                logger.debug("SKIP wrong_extension: %s", rel_path)
+                continue
+
+            # Size limit
+            try:
+                if file_path.stat().st_size > max_size:
+                    skip_counts["too_large"] += 1
+                    logger.debug("SKIP too_large: %s", rel_path)
+                    continue
+            except OSError:
+                skip_counts["unreadable"] += 1
+                logger.debug("SKIP unreadable (stat failed): %s", rel_path)
+                continue
+
+            # Binary detection (content sniff for files with source extensions)
+            if is_binary_file(file_path):
+                skip_counts["binary"] += 1
+                warnings.append(f"Skipped binary file: {rel_path}")
+                continue
+
+            logger.debug("ACCEPT: %s", rel_path)
+            files.append(file_path)
 
     logger.info(
         "Discovery complete — accepted: %d, skipped by reason: %s",
