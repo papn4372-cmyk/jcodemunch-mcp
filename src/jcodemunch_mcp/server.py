@@ -1313,6 +1313,188 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _run_config(check: bool = False) -> None:
+    """Print the current effective configuration to stdout."""
+    tty = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+    enc = getattr(sys.stdout, "encoding", "ascii") or "ascii"
+
+    def _safe(s, fallback):
+        try:
+            s.encode(enc)
+            return s
+        except (UnicodeEncodeError, LookupError):
+            return fallback
+
+    CHECK = _safe("✓", "OK")
+    CROSS = _safe("✗", "!!")
+    WARN  = _safe("!", "!")
+
+    def dim(s):   return f"\033[2m{s}\033[0m" if tty else s
+    def bold(s):  return f"\033[1m{s}\033[0m" if tty else s
+    def green(s): return f"\033[32m{s}\033[0m" if tty else s
+    def yellow(s): return f"\033[33m{s}\033[0m" if tty else s
+    def red(s):   return f"\033[31m{s}\033[0m" if tty else s
+
+    COL = 36
+
+    def row(name, value, is_default=False):
+        tag = dim(" (default)") if is_default else ""
+        print(f"  {name:<{COL}} {value}{tag}")
+
+    def env(var, default=""):
+        val = os.environ.get(var)
+        return (val if val is not None else default), (val is None)
+
+    def section(title):
+        print(f"\n{bold(title)}")
+
+    print(bold(f"jcodemunch-mcp {__version__} — configuration"))
+
+    # ── Core ──────────────────────────────────────────────────────────────
+    section("Core")
+    v, d = env("CODE_INDEX_PATH", str(Path.home() / ".code-index"))
+    row("CODE_INDEX_PATH", v, d)
+    v, d = env("JCODEMUNCH_MAX_FOLDER_FILES", "2000")
+    row("JCODEMUNCH_MAX_FOLDER_FILES", v, d)
+    v, d = env("JCODEMUNCH_MAX_INDEX_FILES", "10000")
+    row("JCODEMUNCH_MAX_INDEX_FILES", v, d)
+    v, d = env("JCODEMUNCH_STALENESS_DAYS", "7")
+    row("JCODEMUNCH_STALENESS_DAYS", v, d)
+    v, d = env("JCODEMUNCH_MAX_RESULTS", "500")
+    row("JCODEMUNCH_MAX_RESULTS", v, d)
+    extra = os.environ.get("JCODEMUNCH_EXTRA_IGNORE_PATTERNS", "")
+    row("JCODEMUNCH_EXTRA_IGNORE_PATTERNS", extra if extra else dim("(none)"), not extra)
+
+    # ── AI Summarizer ─────────────────────────────────────────────────────
+    section("AI Summarizer")
+    use_ai_raw, use_ai_d = env("JCODEMUNCH_USE_AI_SUMMARIES", "true")
+    use_ai = use_ai_raw.lower() not in ("false", "0", "no", "off")
+    row("JCODEMUNCH_USE_AI_SUMMARIES", str(use_ai).lower(), use_ai_d)
+
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    google_key    = os.environ.get("GOOGLE_API_KEY", "")
+    openai_base   = os.environ.get("OPENAI_API_BASE", "")
+
+    if not use_ai:
+        print(f"  {yellow('AI summaries disabled')} — signature fallback active")
+    elif anthropic_key:
+        print(f"  Active provider:  {green('Anthropic')}  (ANTHROPIC_API_KEY set)")
+        model, d = env("ANTHROPIC_MODEL", "claude-haiku-*")
+        row("  ANTHROPIC_MODEL", model, d)
+    elif google_key:
+        print(f"  Active provider:  {green('Google Gemini')}  (GOOGLE_API_KEY set)")
+        model, d = env("GOOGLE_MODEL", "gemini-flash-*")
+        row("  GOOGLE_MODEL", model, d)
+    elif openai_base:
+        print(f"  Active provider:  {green('Local LLM')}  (OPENAI_API_BASE set)")
+        row("  OPENAI_API_BASE", openai_base, False)
+        model, d = env("OPENAI_MODEL", "qwen3-coder")
+        row("  OPENAI_MODEL", model, d)
+        v, d = env("OPENAI_TIMEOUT", "60.0")
+        row("  OPENAI_TIMEOUT", v, d)
+        v, d = env("OPENAI_BATCH_SIZE", "10")
+        row("  OPENAI_BATCH_SIZE", v, d)
+        v, d = env("OPENAI_CONCURRENCY", "1")
+        row("  OPENAI_CONCURRENCY", v, d)
+        v, d = env("OPENAI_MAX_TOKENS", "500")
+        row("  OPENAI_MAX_TOKENS", v, d)
+    else:
+        print(f"  Active provider:  {yellow('none')} — no API key set, signature fallback active")
+        print(f"  {dim('Set ANTHROPIC_API_KEY, GOOGLE_API_KEY, or OPENAI_API_BASE to enable')}")
+
+    # ── HTTP Transport ────────────────────────────────────────────────────
+    section("HTTP Transport")
+    transport, d = env("JCODEMUNCH_TRANSPORT", "stdio")
+    row("JCODEMUNCH_TRANSPORT", transport, d)
+    if transport != "stdio":
+        host, d = env("JCODEMUNCH_HOST", "127.0.0.1")
+        row("JCODEMUNCH_HOST", host, d)
+        port, d = env("JCODEMUNCH_PORT", "8901")
+        row("JCODEMUNCH_PORT", port, d)
+        token = os.environ.get("JCODEMUNCH_HTTP_TOKEN", "")
+        row("JCODEMUNCH_HTTP_TOKEN", green("set") if token else yellow("not set"), not token)
+        rate, d = env("JCODEMUNCH_RATE_LIMIT", "0")
+        rate_label = f"{rate}/min per IP" if rate != "0" else "disabled"
+        row("JCODEMUNCH_RATE_LIMIT", rate_label, d)
+    else:
+        print(f"  {dim('stdio mode — HTTP transport vars ignored')}")
+
+    # ── Performance & Privacy ─────────────────────────────────────────────
+    section("Performance & Privacy")
+    v, d = env("JCODEMUNCH_STATS_FILE_INTERVAL", "3")
+    row("JCODEMUNCH_STATS_FILE_INTERVAL", "disabled" if v == "0" else f"every {v} calls", d)
+    v, d = env("JCODEMUNCH_SHARE_SAVINGS", "1")
+    row("JCODEMUNCH_SHARE_SAVINGS", green("enabled") if v != "0" else yellow("disabled"), d)
+    v, d = env("JCODEMUNCH_REDACT_SOURCE_ROOT", "0")
+    row("JCODEMUNCH_REDACT_SOURCE_ROOT", "enabled" if v == "1" else "disabled", d)
+
+    # ── --check ───────────────────────────────────────────────────────────
+    if check:
+        section("Checks")
+        issues: list[str] = []
+
+        # Storage writable?
+        storage = Path(os.environ.get("CODE_INDEX_PATH", Path.home() / ".code-index"))
+        try:
+            storage.mkdir(parents=True, exist_ok=True)
+            probe = storage / ".jcm_probe"
+            probe.write_text("ok")
+            probe.unlink()
+            print(f"  {green(CHECK)} index storage writable: {storage}")
+        except Exception as e:
+            print(f"  {red(CROSS)} index storage not writable: {storage} — {e}")
+            issues.append("storage")
+
+        # AI provider package installed?
+        if use_ai:
+            if anthropic_key:
+                try:
+                    import anthropic as _a
+                    print(f"  {green(CHECK)} anthropic package installed (v{_a.__version__})")
+                except ImportError:
+                    print(f"  {red(CROSS)} anthropic not installed — run: pip install \"jcodemunch-mcp[anthropic]\"")
+                    issues.append("anthropic")
+            elif google_key:
+                try:
+                    import google.generativeai  # noqa: F401
+                    print(f"  {green(CHECK)} google-generativeai package installed")
+                except ImportError:
+                    print(f"  {red(CROSS)} google-generativeai not installed — run: pip install \"jcodemunch-mcp[gemini]\"")
+                    issues.append("gemini")
+            elif openai_base:
+                try:
+                    import httpx  # noqa: F401
+                    print(f"  {green(CHECK)} httpx available for local LLM requests")
+                except ImportError:
+                    print(f"  {red(CROSS)} httpx not installed (required for local LLM)")
+                    issues.append("httpx")
+            else:
+                print(f"  {yellow(WARN)} no AI provider configured — signature fallback will be used")
+
+        # HTTP transport packages installed?
+        if transport != "stdio":
+            missing = [pkg for pkg in ("uvicorn", "starlette", "anyio") if not _can_import(pkg)]
+            if missing:
+                print(f"  {red(CROSS)} HTTP packages missing: {', '.join(missing)} — run: pip install \"jcodemunch-mcp[http]\"")
+                issues.append("http")
+            else:
+                print(f"  {green(CHECK)} HTTP transport packages installed (uvicorn, starlette, anyio)")
+
+        print()
+        if issues:
+            print(yellow(f"  {len(issues)} issue(s) found — see above."))
+            sys.exit(1)
+        else:
+            print(green("  All checks passed."))
+    print()
+
+
+def _can_import(module: str) -> bool:
+    """Return True if module is importable without side effects."""
+    import importlib.util
+    return importlib.util.find_spec(module) is not None
+
+
 def main(argv: Optional[list[str]] = None):
     """Main entry point."""
     from .security import verify_package_integrity
@@ -1447,6 +1629,17 @@ def main(argv: Optional[list[str]] = None):
     )
     _add_common_args(watch_parser)
 
+    # --- config ---
+    config_parser = subparsers.add_parser(
+        "config",
+        help="Show current effective configuration",
+    )
+    config_parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Also verify prerequisites (storage writable, AI packages installed, HTTP packages present)",
+    )
+
     # --- hook-event ---
     hook_parser = subparsers.add_parser(
         "hook-event",
@@ -1506,11 +1699,15 @@ def main(argv: Optional[list[str]] = None):
     if any(arg in top_level_flags for arg in raw_argv):
         args = parser.parse_args(raw_argv)
     else:
-        known_commands = {"serve", "watch", "hook-event", "watch-claude"}
+        known_commands = {"serve", "watch", "hook-event", "watch-claude", "config"}
         has_subcommand = any(arg in known_commands for arg in raw_argv if not arg.startswith("-"))
         if not has_subcommand:
             raw_argv = ["serve"] + list(raw_argv)
         args = parser.parse_args(raw_argv)
+
+    if args.command == "config":
+        _run_config(check=getattr(args, "check", False))
+        return
 
     _setup_logging(args)
 

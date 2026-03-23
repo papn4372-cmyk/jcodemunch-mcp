@@ -1,7 +1,7 @@
 # jcodemunch-mcp — Project Brief
 
 ## Current State
-- **Version:** 1.10.10 (published to PyPI)
+- **Version:** 1.10.11 (published to PyPI)
 - **INDEX_VERSION:** 4
 - **Tests:** 885 passed, 7 skipped
 - **Python:** >=3.10
@@ -177,6 +177,7 @@ Custom parsers (tree-sitter grammar lacks clean named fields):
 | 1.10.8 | Perf: token_tracker telemetry now uses a single daemon worker thread + queue.Queue (P11) — eliminates per-flush thread creation; _share_savings enqueues work instead of spawning Thread |
 | 1.10.9 | Perf: discover_local_files merges two os.walk passes into one (P8) — .gitignore specs loaded incrementally during file enumeration, eliminating redundant full-tree walk |
 | 1.10.10 | Security: optional per-IP rate-limiting middleware for HTTP transport (S9) — set JCODEMUNCH_RATE_LIMIT=N to cap N requests/minute per client IP; disabled by default |
+| 1.10.11 | UX: `jcodemunch-mcp config` subcommand — prints effective configuration grouped by concern; `--check` validates storage path, AI provider package, and HTTP transport packages |
 
 ## Maintenance Practices
 
