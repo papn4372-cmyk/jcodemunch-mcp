@@ -27,7 +27,7 @@ def test_parse_multiple_pairs(monkeypatch):
 
 
 def test_parse_equals_in_path(monkeypatch):
-    """First = is the separator; later = chars belong to the value."""
+    """Last = is the separator; earlier = chars belong to the original path."""
     monkeypatch.setenv(ENV_VAR, "/home/user/a=b=/new/path")
     assert parse_path_map() == [("/home/user/a=b", "/new/path")]
 
@@ -45,6 +45,7 @@ def test_parse_empty_orig_skipped(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING):
         result = parse_path_map()
     assert result == []
+    assert len(caplog.records) >= 1
 
 
 def test_parse_empty_new_skipped(monkeypatch, caplog):
@@ -52,6 +53,7 @@ def test_parse_empty_new_skipped(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING):
         result = parse_path_map()
     assert result == []
+    assert len(caplog.records) >= 1
 
 
 def test_parse_whitespace_stripped(monkeypatch):
