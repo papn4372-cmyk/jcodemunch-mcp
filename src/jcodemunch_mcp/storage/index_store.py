@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
+from .. import config as _config
 from ..parser.symbols import Symbol
 from ..path_map import parse_path_map, remap
 from .sqlite_store import SQLiteIndexStore
@@ -639,7 +640,7 @@ class IndexStore:
         if data.get("display_name"):
             repo_entry["display_name"] = data["display_name"]
         if data.get("source_root"):
-            if os.environ.get("JCODEMUNCH_REDACT_SOURCE_ROOT", "") == "1":
+            if _config.get("redact_source_root", False):
                 repo_entry["source_root"] = data.get("display_name", "") or ""
             else:
                 repo_entry["source_root"] = remap(data["source_root"], _pairs if _pairs is not None else parse_path_map())

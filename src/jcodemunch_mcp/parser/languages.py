@@ -2,6 +2,7 @@
 
 import logging
 import os
+import threading
 from dataclasses import dataclass
 from typing import Optional
 
@@ -1370,7 +1371,10 @@ LANGUAGE_REGISTRY = {
 
 logger = logging.getLogger(__name__)
 
-# Well-known OpenAPI/Swagger basenames (no compound extension, just the filename)
+_APPLIED_EXTENSIONS = False
+_EXTENSIONS_LOCK = threading.Lock()
+
+
 _OPENAPI_BASENAMES = frozenset({
     "openapi.yaml", "openapi.yml", "openapi.json",
     "swagger.yaml", "swagger.yml", "swagger.json",
@@ -1378,30 +1382,38 @@ _OPENAPI_BASENAMES = frozenset({
 
 
 def _apply_extra_extensions() -> None:
-    """Apply JCODEMUNCH_EXTRA_EXTENSIONS env var to LANGUAGE_EXTENSIONS at import time."""
-    raw = os.environ.get("JCODEMUNCH_EXTRA_EXTENSIONS", "").strip()
-    if not raw:
-        return
-    for token in raw.split(","):
-        token = token.strip()
-        if not token:
-            continue
-        if ":" not in token:
-            logger.warning("JCODEMUNCH_EXTRA_EXTENSIONS: malformed entry %r (expected .ext:lang) — skipped", token)
-            continue
-        ext, _, lang = token.partition(":")
-        ext = ext.strip()
-        lang = lang.strip()
-        if not ext or not lang:
-            logger.warning("JCODEMUNCH_EXTRA_EXTENSIONS: malformed entry %r (empty ext or lang) — skipped", token)
-            continue
-        if lang not in LANGUAGE_REGISTRY:
-            logger.warning("JCODEMUNCH_EXTRA_EXTENSIONS: unknown language %r in entry %r — skipped", lang, token)
-            continue
-        LANGUAGE_EXTENSIONS[ext] = lang
+    """Apply extra_extensions from config to LANGUAGE_EXTENSIONS.
+
+    Respects config.get("extra_extensions") which includes env var fallback
+    (both JSON and legacy comma-separated formats) applied at startup.
+
+    Lazy — runs once on first access (cached via _APPLIED_EXTENSIONS flag).
+    Thread-safe via _EXTENSIONS_LOCK.
+    """
+    global _APPLIED_EXTENSIONS
+    with _EXTENSIONS_LOCK:
+        if _APPLIED_EXTENSIONS:
+            return
+
+        from .. import config as _cfg
+
+        extra_extensions = _cfg.get("extra_extensions", {})
+        for ext, lang in extra_extensions.items():
+            if not ext or not lang:
+                logger.warning("extra_extensions: empty extension or language %r:%r — skipped", ext, lang)
+                continue
+            if lang not in LANGUAGE_REGISTRY:
+                logger.warning("extra_extensions: unknown language %r for extension %r — skipped", lang, ext)
+                continue
+            LANGUAGE_EXTENSIONS[ext] = lang
+
+        _APPLIED_EXTENSIONS = True
 
 
-_apply_extra_extensions()
+def get_language_extensions() -> dict[str, str]:
+    """Return LANGUAGE_EXTENSIONS with extra_extensions applied (lazy, cached)."""
+    _apply_extra_extensions()
+    return LANGUAGE_EXTENSIONS
 
 
 def get_language_for_path(path: str) -> "Optional[str]":
@@ -1412,6 +1424,7 @@ def get_language_for_path(path: str) -> "Optional[str]":
     2. Compound suffixes (e.g. ``.blade.php``, ``.openapi.yaml``).
     3. Last extension (e.g. ``.php``).
     """
+    _apply_extra_extensions()
     import os as _os
     lower = path.lower()
     base = _os.path.basename(lower)

@@ -6,8 +6,6 @@ and inject business context into symbols and file summaries during indexing.
 
 from .base import ContextProvider, FileContext, discover_providers, enrich_symbols, collect_metadata
 
-# Import provider modules so @register_provider decorators execute.
-# Each module registers itself on import — add new providers here.
 from . import dbt  # noqa: F401
 from . import git_blame  # noqa: F401
 

@@ -16,7 +16,15 @@ def parse_path_map() -> list[tuple[str, str]]:
     Returns [] when the env var is unset or empty.
     Malformed entries (no '=', empty orig, empty new) are skipped with a WARNING.
     """
-    raw = os.environ.get(ENV_VAR, "").strip()
+    # Config takes precedence, env var is fallback (handled by config module)
+    try:
+        from .config import get as _config_get
+        raw = _config_get("path_map", "").strip()
+    except ImportError:
+        raw = ""
+    # If config returned empty/default, check env var directly
+    if not raw:
+        raw = os.environ.get(ENV_VAR, "").strip()
     if not raw:
         return []
 
