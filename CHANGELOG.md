@@ -4,6 +4,29 @@ All notable changes to jcodemunch-mcp are documented here.
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-03-28
+
+### Removed
+- **`check_freshness` and `wait_for_fresh` MCP tools** — no client ever consumed these; removing them saves ~400 schema tokens per call. Server-side freshness management via `freshness_mode` config key (`relaxed`/`strict`) remains fully functional.
+- **Staleness `_meta` fields** (`index_stale`, `reindex_in_progress`, `stale_since_ms`) — ~30-50 tokens of annotated noise per response. The watcher still manages freshness internally; strict mode blocks silently in `call_tool` before returning clean results.
+- `powered_by` removed from `_meta` common fields.
+
+### Fixed
+- **Watcher config layering** — `_get_watcher_enabled()` previously bypassed `config_module.get()` and read `JCODEMUNCH_WATCH` env var directly, silently ignoring the `"watch"` key in `config.jsonc`. Precedence is now: CLI flag > config file (with env var as fallback only when key absent).
+- **Hash-cache miss reindex skip** — when the watcher's in-memory hash cache missed, the fallback read the file from disk. By the time `watchfiles` delivers the event the file already has new content, making `old_hash == new_hash` and silently skipping the change. Fixed with a `"__cache_miss__"` sentinel that guarantees re-parse on any cache miss.
+- **Flaky Windows tests from SQLite WAL cache contamination** — tests that modified the DB directly didn't invalidate the in-memory LRU cache; WAL mode on Windows doesn't always update file mtime on write, so the cache key matched stale data. Fixed via `tests/conftest.py` autouse fixtures for cache clear and config reset, plus targeted `_cache_evict()` calls after direct DB writes.
+- `test_openai_summarizer_timeout_config` now correctly flows `allow_remote_summarizer` through `load_config()` instead of reading from `config.get()` directly.
+
+### Added
+- **Config-driven watcher parameters** — all watcher options are now configurable via `config.jsonc` (CLI flags remain as overrides). New keys:
+  - `watch_debounce_ms` (int, default 2000) — was wired in config.py but not forwarded to watcher kwargs
+  - `watch_paths` (list, default `[]` → CWD) — folders to watch
+  - `watch_extra_ignore` (list, default `[]`) — additional gitignore-style patterns
+  - `watch_follow_symlinks` (bool, default `false`)
+  - `watch_idle_timeout` (int or null, default `null`) — auto-stop after N minutes idle
+  - `watch_log` (str or null, default `null`) — log watcher output to file; `"auto"` = temp file
+- 25 new tests (1285 total).
+
 ## [1.11.17] - 2026-03-27
 
 ### Added
