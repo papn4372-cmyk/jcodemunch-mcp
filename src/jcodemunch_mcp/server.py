@@ -75,8 +75,15 @@ logger = logging.getLogger(__name__)
 
 
 def _default_use_ai_summaries() -> bool:
-    """Return the default for use_ai_summaries, respecting config (including env var fallback)."""
-    return config_module.get("use_ai_summaries", True)
+    """Return the default for use_ai_summaries as a bool (True unless explicitly disabled).
+
+    Config values "auto" and True both map to True; "false"/False maps to False.
+    The tri-state distinction (auto vs explicit) is resolved in batch_summarize._create_summarizer().
+    """
+    raw = config_module.get("use_ai_summaries", "auto")
+    if isinstance(raw, bool):
+        return raw
+    return str(raw).lower().strip() not in ("false", "0", "no", "off")
 
 
 def _parse_watcher_flag(value: Optional[str]) -> bool:
