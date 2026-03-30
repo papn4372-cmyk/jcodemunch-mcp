@@ -75,15 +75,17 @@ logger = logging.getLogger(__name__)
 
 
 def _default_use_ai_summaries() -> bool:
-    """Return the default for use_ai_summaries as a bool (True unless explicitly disabled).
+    """Return whether AI summarization is enabled, as a bool.
 
-    Config values "auto" and True both map to True; "false"/False maps to False.
-    The tri-state distinction (auto vs explicit) is resolved in batch_summarize._create_summarizer().
+    Collapses the tri-state config value ("auto", True, "true" → True;
+    "false", False, "0", "no", "off" → False) into a simple gate.
+    Note: _create_summarizer() reads the config directly to resolve
+    the "auto" vs. explicit-provider distinction at summarization time.
     """
     raw = config_module.get("use_ai_summaries", "auto")
     if isinstance(raw, bool):
         return raw
-    return str(raw).lower().strip() not in ("false", "0", "no", "off")
+    return str(raw).strip().lower() not in ("false", "0", "no", "off")
 
 
 def _parse_watcher_flag(value: Optional[str]) -> bool:
