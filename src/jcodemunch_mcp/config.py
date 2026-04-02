@@ -296,6 +296,7 @@ DEFAULTS = {
     "allow_remote_summarizer": False,
     "path_map": "",
     "cross_repo_default": False,
+    "discovery_hint": True,
 }
 
 CONFIG_TYPES = {
@@ -344,6 +345,7 @@ CONFIG_TYPES = {
     "allow_remote_summarizer": bool,
     "path_map": str,
     "cross_repo_default": bool,
+    "discovery_hint": bool,
     "version": str,
     "architecture": dict,
 }

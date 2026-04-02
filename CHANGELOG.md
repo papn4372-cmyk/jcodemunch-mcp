@@ -4,6 +4,12 @@ All notable changes to jcodemunch-mcp are documented here.
 
 ## [Unreleased]
 
+## [1.21.9] - 2026-04-02
+
+### Added
+- **`workflow` MCP prompt** — Claude Code surfaces this as `/mcp__jcodemunch-mcp__workflow`, a slash command that injects step-by-step usage guidance (list_repos → search_symbols → get_symbol_source) directly into context. Provides reliable workflow instructions even when CLAUDE.md is absent or not loaded by the model.
+- **`discovery_hint` config flag** (default `true`) — when enabled, the `list_repos` tool description includes a short note reminding Claude to prefer jcodemunch tools over native Grep/Read and to call `ToolSearch` if schemas appear deferred. Set `"discovery_hint": false` in `config.jsonc` to suppress this. Addresses jgravelle/jcodemunch-mcp#199.
+
 ## [1.21.8] - 2026-04-02
 
 ### Fixed

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from mcp.server import Server
-from mcp.types import Tool, TextContent, Resource
+from mcp.types import Tool, TextContent, Resource, Prompt, PromptMessage, GetPromptResult
 
 from . import __version__
 from . import config as config_module
@@ -283,7 +283,15 @@ def _build_tools_list() -> list[Tool]:
         ),
         Tool(
             name="list_repos",
-            description="List all indexed repositories.",
+            description=(
+                "List all indexed repositories. "
+                "START HERE before using Grep/Read/search tools — check if the project is "
+                "already indexed, then use search_symbols / get_symbol_source instead of "
+                "native file reads. If jcodemunch tools appear as deferred in your tool list, "
+                "call ToolSearch to load their schemas first."
+                if config_module.get("discovery_hint", True)
+                else "List all indexed repositories."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {}
@@ -1439,10 +1447,58 @@ async def list_resources() -> list[Resource]:
     return []
 
 
+_WORKFLOW_PROMPT_TEXT = """\
+# jcodemunch-mcp — Workflow Guide
+
+Use these tools instead of Grep/Read/search for any indexed repository.
+
+## Step-by-step
+
+1. **list_repos** — check if the project is already indexed.
+   - If not found, run **index_folder** (local) or **index_repo** (GitHub URL).
+
+2. **search_symbols** — find functions, classes, methods by name or description.
+   - Use `detail_level: "full"` to get source inline, or follow up with **get_symbol_source**.
+
+3. **get_context_bundle** — get symbol source + its imports in one call.
+
+4. **search_text** — fall back to full-text / regex search for string literals or comments.
+
+5. **get_file_outline** — list all symbols in a file without reading the whole thing.
+
+## Claude Code deferred-tool note
+
+jcodemunch tools may appear as *deferred* in your system-reminder. Call **ToolSearch** with
+a query like `"list repos"` or `"search symbols"` to load the full schema before use.
+Set `discovery_hint: false` in config.jsonc to suppress the reminder in tool descriptions.
+"""
+
+
 @server.list_prompts()
-async def list_prompts() -> list:
-    """Return empty prompt list for client compatibility (e.g. Windsurf)."""
-    return []
+async def list_prompts() -> list[Prompt]:
+    """Return the workflow guidance prompt."""
+    return [
+        Prompt(
+            name="workflow",
+            description="Step-by-step guide for using jcodemunch-mcp tools in Claude Code.",
+        )
+    ]
+
+
+@server.get_prompt()
+async def get_prompt(name: str, arguments: dict | None = None) -> GetPromptResult:
+    """Return the requested prompt content."""
+    if name == "workflow":
+        return GetPromptResult(
+            description="jcodemunch-mcp workflow guide for Claude Code.",
+            messages=[
+                PromptMessage(
+                    role="user",
+                    content=TextContent(type="text", text=_WORKFLOW_PROMPT_TEXT),
+                )
+            ],
+        )
+    raise ValueError(f"Unknown prompt: {name}")
 
 
 @server.call_tool(validate_input=False)
