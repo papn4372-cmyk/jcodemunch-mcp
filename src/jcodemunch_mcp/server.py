@@ -66,6 +66,7 @@ from .parser.symbols import VALID_KINDS
 from .summarizer import get_provider_name
 from .reindex_state import await_freshness_if_strict
 from .path_map import ENV_VAR as _PATH_MAP_ENV_VAR
+from .storage import result_cache_invalidate as _result_cache_invalidate
 
 try:
     from .watcher import watch_folders, WatcherError
@@ -1526,6 +1527,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 incremental=arguments.get("incremental", True),
                 extra_ignore_patterns=arguments.get("extra_ignore_patterns"),
             )
+            _result_cache_invalidate()
         elif name == "index_folder":
             _ai = arguments.get("use_ai_summaries", _default_use_ai_summaries())
             result = await asyncio.to_thread(
@@ -1539,6 +1541,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     incremental=arguments.get("incremental", True),
                 )
             )
+            _result_cache_invalidate()
         elif name == "summarize_repo":
             result = await asyncio.to_thread(
                 functools.partial(
@@ -1559,6 +1562,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     context_providers=arguments.get("context_providers", True),
                 )
             )
+            _result_cache_invalidate()
         elif name == "list_repos":
             result = await asyncio.to_thread(
                 functools.partial(list_repos, storage_path=storage_path)
@@ -1650,6 +1654,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     storage_path=storage_path,
                 )
             )
+            _result_cache_invalidate()
         elif name == "search_text":
             result = await asyncio.to_thread(
                 functools.partial(

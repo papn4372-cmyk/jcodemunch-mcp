@@ -5,7 +5,7 @@ import time
 from collections import deque
 from typing import Optional
 
-from ..storage import IndexStore
+from ..storage import IndexStore, result_cache_get, result_cache_put
 from ..parser.imports import resolve_specifier
 from ._utils import resolve_repo
 from .package_registry import extract_root_package_from_specifier
@@ -112,6 +112,17 @@ def get_blast_radius(
         owner, name = resolve_repo(repo, storage_path)
     except ValueError as e:
         return {"error": str(e)}
+
+    # Check session cache before the expensive BFS + content scans
+    repo_key = f"{owner}/{name}"
+    specific_key = (symbol, depth, call_depth, bool(cross_repo), include_depth_scores)
+    cached = result_cache_get("get_blast_radius", repo_key, specific_key)
+    if cached is not None:
+        result = dict(cached)
+        result["_meta"] = {**cached["_meta"],
+                           "timing_ms": round((time.perf_counter() - start) * 1000, 1),
+                           "cache_hit": True}
+        return result
 
     store = IndexStore(base_path=storage_path)
     index = store.load_index(owner, name)
@@ -266,4 +277,5 @@ def get_blast_radius(
             }
             for d in sorted(files_by_depth)
         ]
+    result_cache_put("get_blast_radius", repo_key, specific_key, result)
     return result

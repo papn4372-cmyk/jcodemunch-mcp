@@ -5,7 +5,7 @@ import re
 import time
 from typing import Optional
 
-from ..storage import IndexStore
+from ..storage import IndexStore, result_cache_get, result_cache_put
 from ._utils import resolve_repo
 
 
@@ -263,8 +263,19 @@ def find_references(
     if identifiers is not None:
         return _find_references_batch(identifiers, index, max_results, owner, name, start)
     else:
-        return _find_references_single(
+        repo_key = f"{owner}/{name}"
+        specific_key = (identifier, max_results, include_call_chain)
+        cached = result_cache_get("find_references", repo_key, specific_key)
+        if cached is not None:
+            result = dict(cached)
+            result["_meta"] = {**cached["_meta"],
+                               "timing_ms": round((time.perf_counter() - start) * 1000, 1),
+                               "cache_hit": True}
+            return result
+        result = _find_references_single(
             identifier, index, max_results, owner, name, start,
             include_call_chain=include_call_chain,
             store=store,
         )
+        result_cache_put("find_references", repo_key, specific_key, result)
+        return result

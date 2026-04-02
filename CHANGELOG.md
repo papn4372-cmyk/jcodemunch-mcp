@@ -4,6 +4,14 @@ All notable changes to jcodemunch-mcp are documented here.
 
 ## [Unreleased]
 
+## [1.18.0] - 2026-04-01
+
+### Added
+- **Session-level LRU result cache** — `get_blast_radius` and `find_references` (single-identifier mode) now cache their results for the duration of the MCP session. Repeated calls with the same arguments return instantly from the in-process cache with `_meta.cache_hit: true` instead of re-running the expensive BFS traversal and file-content scans. Cache is a 256-entry LRU (OrderedDict); oldest entries are evicted first. Thread-safe via the existing `_State` lock.
+- **Automatic cache invalidation** — the result cache is cleared after any `index_repo`, `index_folder`, `index_file`, or `invalidate_cache` call so stale results are never served after re-indexing.
+- **`get_session_stats` — `result_cache` field** — the existing `get_session_stats` tool now includes a `result_cache` section: `{total_hits, total_misses, hit_rate, cached_entries}`. Useful for tuning and for verifying that the cache is working in real sessions.
+- **18 new tests** (1622 total, 7 skipped): `test_result_cache.py` covers get/put, hit/miss counters, by-tool breakdown, invalidation (all-repos and repo-specific), LRU eviction at maxsize, and the `result_cache` field in `get_session_stats`.
+
 ## [1.17.0] - 2026-04-01
 
 ### Added

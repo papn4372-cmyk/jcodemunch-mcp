@@ -26,6 +26,7 @@ import signal
 import threading
 import time
 import uuid
+from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -39,6 +40,7 @@ _SESSION_STATS_FILE = "session_stats.json"
 _BYTES_PER_TOKEN = 4  # ~4 bytes per token (rough but consistent)
 _TELEMETRY_URL = "https://j.gravelle.us/APIs/savings/post.php"
 _FLUSH_INTERVAL = 3  # flush to disk every N calls
+_RESULT_CACHE_MAXSIZE = 256  # max tool-result cache entries per session
 
 def _get_stats_file_interval() -> int:
     """Read stats_file_interval from config. 0 = disabled, default 3."""
@@ -75,6 +77,10 @@ class _State:
         self._session_calls: int = 0
         self._session_start: float = time.monotonic()
         self._session_tool_breakdown: dict = {}
+        # Session-level tool-result cache (LRU, evicted at _RESULT_CACHE_MAXSIZE)
+        self._result_cache: OrderedDict = OrderedDict()  # (tool, repo, key) -> result
+        self._cache_hits: dict = {}    # tool_name -> hit count
+        self._cache_misses: dict = {}  # tool_name -> miss count
 
     def _ensure_loaded(self, base_path: Optional[str]) -> None:
         """Load persisted total from disk (once per process)."""
@@ -118,15 +124,83 @@ class _State:
             self._write_session_stats_locked(stats, force=True)
             return stats
 
+    def cache_get(self, tool_name: str, repo: str, specific_key: tuple):
+        """Return cached result for (tool, repo, key), or None on miss. Thread-safe."""
+        with self._lock:
+            full_key = (tool_name, repo, specific_key)
+            if full_key in self._result_cache:
+                self._result_cache.move_to_end(full_key)
+                self._cache_hits[tool_name] = self._cache_hits.get(tool_name, 0) + 1
+                return self._result_cache[full_key]
+            self._cache_misses[tool_name] = self._cache_misses.get(tool_name, 0) + 1
+            return None
+
+    def cache_put(self, tool_name: str, repo: str, specific_key: tuple, result: dict) -> None:
+        """Store result in LRU cache. Evicts oldest entry when full. Thread-safe."""
+        with self._lock:
+            full_key = (tool_name, repo, specific_key)
+            self._result_cache[full_key] = result
+            self._result_cache.move_to_end(full_key)
+            if len(self._result_cache) > _RESULT_CACHE_MAXSIZE:
+                self._result_cache.popitem(last=False)
+
+    def cache_invalidate(self, repo: Optional[str] = None) -> int:
+        """Evict all entries (repo=None) or entries for a specific repo. Returns evicted count."""
+        with self._lock:
+            if repo is None:
+                count = len(self._result_cache)
+                self._result_cache.clear()
+                return count
+            to_delete = [k for k in self._result_cache if k[1] == repo]
+            for k in to_delete:
+                del self._result_cache[k]
+            return len(to_delete)
+
+    def cache_stats(self) -> dict:
+        """Return cache hit/miss stats. Thread-safe."""
+        with self._lock:
+            total_hits = sum(self._cache_hits.values())
+            total_misses = sum(self._cache_misses.values())
+            total_lookups = total_hits + total_misses
+            by_tool = {}
+            all_tools = set(self._cache_hits) | set(self._cache_misses)
+            for tool in all_tools:
+                h = self._cache_hits.get(tool, 0)
+                m = self._cache_misses.get(tool, 0)
+                t = h + m
+                by_tool[tool] = {
+                    "hits": h,
+                    "misses": m,
+                    "hit_rate": round(h / t, 3) if t else 0.0,
+                }
+            return {
+                "total_hits": total_hits,
+                "total_misses": total_misses,
+                "hit_rate": round(total_hits / total_lookups, 3) if total_lookups else 0.0,
+                "cached_entries": len(self._result_cache),
+                "by_tool": by_tool,
+            }
+
     def _build_stats_locked(self) -> dict:
         """Build session stats dict. Must be called with _lock held."""
         elapsed = time.monotonic() - self._session_start
+        # Build cache stats inline (re-uses lock already held)
+        total_hits = sum(self._cache_hits.values())
+        total_misses = sum(self._cache_misses.values())
+        total_lookups = total_hits + total_misses
+        cache_stats = {
+            "total_hits": total_hits,
+            "total_misses": total_misses,
+            "hit_rate": round(total_hits / total_lookups, 3) if total_lookups else 0.0,
+            "cached_entries": len(self._result_cache),
+        }
         return {
             "session_tokens_saved": self._session_tokens,
             "session_calls": self._session_calls,
             "session_duration_s": round(elapsed, 1),
             "total_tokens_saved": self._total,
             "tool_breakdown": dict(self._session_tool_breakdown),
+            "result_cache": cache_stats,
         }
 
     def _write_session_stats_locked(self, stats: dict, force: bool = False) -> None:
@@ -309,6 +383,26 @@ def get_session_stats(base_path: Optional[str] = None) -> dict:
 def get_total_saved(base_path: Optional[str] = None) -> int:
     """Return the current cumulative total without modifying it."""
     return _state.get_total(base_path)
+
+
+def result_cache_get(tool_name: str, repo: str, specific_key: tuple):
+    """Return a cached tool result, or None on miss. Updates hit/miss counters."""
+    return _state.cache_get(tool_name, repo, specific_key)
+
+
+def result_cache_put(tool_name: str, repo: str, specific_key: tuple, result: dict) -> None:
+    """Store a tool result in the session LRU cache (max 256 entries)."""
+    _state.cache_put(tool_name, repo, specific_key, result)
+
+
+def result_cache_invalidate(repo: Optional[str] = None) -> int:
+    """Evict cached results — all repos (default) or a specific repo. Returns evicted count."""
+    return _state.cache_invalidate(repo)
+
+
+def result_cache_stats() -> dict:
+    """Return cache hit/miss stats for the current session."""
+    return _state.cache_stats()
 
 
 def estimate_savings(raw_bytes: int, response_bytes: int) -> int:
