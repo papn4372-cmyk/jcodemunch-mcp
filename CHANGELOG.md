@@ -4,6 +4,11 @@ All notable changes to jcodemunch-mcp are documented here.
 
 ## [Unreleased]
 
+## [1.21.7] - 2026-04-02
+
+### Fixed
+- **`search_symbols` no longer returns centrality-only results for out-of-corpus queries (C3)** — `_bm25_score` now guards the centrality bonus with `score > 0`, so it is only applied when at least one query term contributed BM25 relevance (or an exact name match fired). Previously, queries whose terms appeared in no indexed symbol produced BM25 score 0 for every symbol, but the unconditional `centrality` add-on gave structurally popular files scores > 0, causing them to pass the `score <= 0` filter and surface as apparent results with no indication they were purely import-graph artifacts.
+
 ## [1.21.6] - 2026-04-02
 
 ### Fixed

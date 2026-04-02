@@ -138,7 +138,7 @@ def _bm25_score(sym: dict, query_terms: list[str], idf: dict[str, float], avgdl:
             continue
         score += idf_val * (tf * (_BM25_K1 + 1)) / (tf + K)
 
-    if centrality:
+    if centrality and score > 0:
         score += centrality.get(sym.get("file", ""), 0.0)
 
     return score
