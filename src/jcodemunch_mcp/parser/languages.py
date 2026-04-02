@@ -115,8 +115,12 @@ LANGUAGE_EXTENSIONS = {
     ".jl": "julia",
     # R
     ".r": "r",
-    # CSS
+    # CSS and preprocessors
     ".css": "css",
+    ".scss": "scss",
+    ".sass": "sass",
+    ".less": "less",
+    ".styl": "styl",
     # TOML
     ".toml": "toml",
     # Groovy
@@ -1136,6 +1140,76 @@ CSS_SPEC = LanguageSpec(
 )
 
 
+# SCSS specification
+# tree-sitter-scss is available via tree-sitter-language-pack.
+# Symbol extraction handled by _parse_scss_symbols in extractor.py:
+#   $variables   → constant, @mixin → function, @function → function,
+#   rule_set / %placeholder selectors → class, @media/@supports → type
+SCSS_SPEC = LanguageSpec(
+    ts_language="scss",
+    symbol_node_types={},
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+)
+
+
+# SASS (indented syntax) specification
+# No tree-sitter grammar available in tree-sitter-language-pack.
+# Falls back gracefully to [] — files are still indexed for text search.
+SASS_SPEC = LanguageSpec(
+    ts_language="css",
+    symbol_node_types={},
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+)
+
+
+# Less specification
+# No tree-sitter grammar available in tree-sitter-language-pack.
+# Falls back gracefully to [] — files are still indexed for text search.
+LESS_SPEC = LanguageSpec(
+    ts_language="css",
+    symbol_node_types={},
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+)
+
+
+# Stylus specification
+# No tree-sitter grammar available in tree-sitter-language-pack.
+# Falls back gracefully to [] — files are still indexed for text search.
+STYL_SPEC = LanguageSpec(
+    ts_language="css",
+    symbol_node_types={},
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+)
+
+
 # TOML specification
 # NOTE: TOML tables are the closest analogue to symbols. Custom extraction
 # deferred. Files are indexed for text search.
@@ -1390,6 +1464,10 @@ LANGUAGE_REGISTRY = {
     "julia": JULIA_SPEC,
     "r": R_SPEC,
     "css": CSS_SPEC,
+    "scss": SCSS_SPEC,
+    "sass": SASS_SPEC,
+    "less": LESS_SPEC,
+    "styl": STYL_SPEC,
     "toml": TOML_SPEC,
     "groovy": GROOVY_SPEC,
     "objc": OBJC_SPEC,

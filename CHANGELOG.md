@@ -4,6 +4,12 @@ All notable changes to jcodemunch-mcp are documented here.
 
 ## [Unreleased]
 
+## [1.21.3] - 2026-04-02
+
+### Added
+- **CSS preprocessor support (SCSS, SASS, Less, Stylus)** — `.scss`, `.sass`, `.less`, and `.styl` files are now indexed and text-searchable. SCSS additionally gets full symbol extraction: `$variables` → `constant`, `@mixin` → `function`, `@function` → `function`, rule-set selectors (including `%placeholders`) → `class`, `@media`/`@supports` → `type`. SASS, Less, and Stylus have no tree-sitter grammar in the pack so they index for text search only — `search_text` with `file_pattern: "**/*.scss"` now returns results. Closes issue #197 (reported by nikolai-vysotskyi).
+- **24 new tests** covering SCSS extension detection, variable/mixin/function/selector/at-rule extraction, symbol ID uniqueness, byte metadata, `parse_file()` dispatch, empty-file edge case, and text-only confirmation for Less/SASS/Stylus.
+
 ## [1.21.2] - 2026-04-02
 
 ### Added

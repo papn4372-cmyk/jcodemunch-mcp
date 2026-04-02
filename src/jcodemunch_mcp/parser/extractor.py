@@ -94,6 +94,10 @@ def parse_file(content: str, filename: str, language: str, source_bytes: Optiona
         symbols = _parse_al_symbols(source_bytes, filename)
     elif language == "css":
         symbols = _parse_css_symbols(source_bytes, filename)
+    elif language == "scss":
+        symbols = _parse_scss_symbols(source_bytes, filename)
+    elif language in ("sass", "less", "styl"):
+        symbols = []  # No tree-sitter grammar; files indexed for text search only
     else:
         spec = LANGUAGE_REGISTRY[language]
         symbols = _parse_with_spec(source_bytes, filename, language, spec)
@@ -5159,6 +5163,100 @@ def _parse_css_symbols(source_bytes: bytes, filename: str) -> list[Symbol]:
             if not first_line:
                 continue
             symbols.append(_make(first_line, "type", node, first_line))
+
+    return symbols
+
+
+def _parse_scss_symbols(source_bytes: bytes, filename: str) -> list[Symbol]:
+    """Parse SCSS files and extract variables, mixins, functions, rule sets, and at-rules.
+
+    Extracted symbol kinds:
+    - $variable declarations  → kind "constant"  (e.g. ``$primary-color: #333``)
+    - @mixin definitions      → kind "function"   (e.g. ``@mixin flex-center($dir)``)
+    - @function definitions   → kind "function"   (e.g. ``@function px-to-rem($px)``)
+    - rule_set selectors      → kind "class"      (e.g. ``.container``, ``%placeholder``)
+    - @media / @supports      → kind "type"       (e.g. ``@media (max-width: 768px)``)
+    """
+    try:
+        parser = get_parser("scss")
+    except Exception:
+        return []
+
+    tree = parser.parse(source_bytes)
+    symbols: list[Symbol] = []
+
+    def _text(node) -> str:
+        return source_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
+
+    def _make(name: str, kind: str, node, signature: str) -> Symbol:
+        return Symbol(
+            id=make_symbol_id(filename, name, kind),
+            file=filename,
+            name=name,
+            qualified_name=name,
+            kind=kind,
+            language="scss",
+            signature=signature,
+            line=node.start_point[0] + 1,
+            end_line=node.end_point[0] + 1,
+            byte_offset=node.start_byte,
+            byte_length=node.end_byte - node.start_byte,
+            content_hash=compute_content_hash(source_bytes[node.start_byte:node.end_byte]),
+        )
+
+    def _selector_name(selectors_node) -> str:
+        raw = " ".join(_text(selectors_node).split())
+        return raw[:80] if len(raw) > 80 else raw
+
+    def _walk(node) -> None:
+        if node.type == "declaration":
+            # Top-level $variable declarations
+            prop = next((c for c in node.children if c.type == "property_name"), None)
+            if prop is not None:
+                prop_text = _text(prop)
+                if prop_text.startswith("$"):
+                    # Build a concise signature: $var: value
+                    sig = " ".join(_text(node).split()).rstrip(";")
+                    if len(sig) > 80:
+                        sig = sig[:77] + "..."
+                    symbols.append(_make(prop_text, "constant", node, sig))
+
+        elif node.type == "mixin_statement":
+            name_node = next((c for c in node.children if c.type == "identifier"), None)
+            if name_node is not None:
+                mixin_name = _text(name_node)
+                params_node = next((c for c in node.children if c.type == "parameters"), None)
+                sig = f"@mixin {mixin_name}"
+                if params_node is not None:
+                    sig += _text(params_node)
+                symbols.append(_make(f"@mixin {mixin_name}", "function", node, sig))
+
+        elif node.type == "function_statement":
+            name_node = next((c for c in node.children if c.type == "identifier"), None)
+            if name_node is not None:
+                func_name = _text(name_node)
+                params_node = next((c for c in node.children if c.type == "parameters"), None)
+                sig = f"@function {func_name}"
+                if params_node is not None:
+                    sig += _text(params_node)
+                symbols.append(_make(f"@function {func_name}", "function", node, sig))
+
+        elif node.type == "rule_set":
+            selectors_node = next((c for c in node.children if c.type == "selectors"), None)
+            if selectors_node is not None:
+                name = _selector_name(selectors_node)
+                if name:
+                    symbols.append(_make(name, "class", node, name))
+
+        elif node.type in ("media_statement", "supports_statement"):
+            first_line = _text(node).split("\n")[0].strip().rstrip("{").strip()
+            if len(first_line) > 80:
+                first_line = first_line[:77] + "..."
+            if first_line:
+                symbols.append(_make(first_line, "type", node, first_line))
+
+    for child in tree.root_node.children:
+        _walk(child)
 
     return symbols
 
