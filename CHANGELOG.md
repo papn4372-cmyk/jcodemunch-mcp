@@ -4,6 +4,12 @@ All notable changes to jcodemunch-mcp are documented here.
 
 ## [Unreleased]
 
+## [1.21.4] - 2026-04-02
+
+### Added
+- **JSON indexing and symbol extraction** — `.json` files are now indexed and text-searchable. Top-level object keys are extracted as `constant` symbols (e.g. `name`, `dependencies`, `scripts` in `package.json`; compiler options keys in `tsconfig.json`). Compound extensions `.openapi.json` / `.swagger.json` and well-known basenames (`openapi.json`, `swagger.json`) continue to resolve to `openapi` as before. Closes reported gap in issue #197 follow-up comment (nikolai-vysotskyi).
+- **15 new tests** covering extension detection, compound-extension precedence, top-level key extraction, symbol kind/metadata, array-at-root edge case, and `parse_file()` dispatch.
+
 ## [1.21.3] - 2026-04-02
 
 ### Added

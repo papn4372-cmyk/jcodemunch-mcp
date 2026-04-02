@@ -156,6 +156,8 @@ LANGUAGE_EXTENSIONS = {
     # YAML / Ansible (Ansible path heuristics handled in get_language_for_path)
     ".yaml": "yaml",
     ".yml": "yaml",
+    # JSON (compound .openapi.json / .swagger.json checked first via LANGUAGE_EXTENSIONS key order)
+    ".json": "json",
     # OpenAPI / Swagger (compound extensions; basenames handled in get_language_for_path)
     ".openapi.yaml": "openapi",
     ".openapi.yml": "openapi",
@@ -1406,6 +1408,24 @@ ANSIBLE_SPEC = LanguageSpec(
 )
 
 
+# JSON specification
+# Top-level object keys extracted as constants by _parse_json_symbols in extractor.py.
+# Compound extensions (.openapi.json, .swagger.json) and well-known basenames
+# (openapi.json, swagger.json) are detected as "openapi" before this spec fires.
+JSON_SPEC = LanguageSpec(
+    ts_language="json",
+    symbol_node_types={},
+    name_fields={},
+    param_fields={},
+    return_type_fields={},
+    docstring_strategy="preceding_comment",
+    decorator_node_type=None,
+    container_node_types=[],
+    constant_patterns=[],
+    type_patterns=[],
+)
+
+
 # OpenAPI / Swagger specification
 # NOTE: Parsed by _parse_openapi_symbols() in extractor.py using yaml/json.
 # File detection uses compound extensions (.openapi.yaml, .swagger.json, …)
@@ -1479,6 +1499,7 @@ LANGUAGE_REGISTRY = {
     "xml": XML_SPEC,
     "yaml": YAML_SPEC,
     "ansible": ANSIBLE_SPEC,
+    "json": JSON_SPEC,
     "openapi": OPENAPI_SPEC,
 }
 

@@ -98,6 +98,8 @@ def parse_file(content: str, filename: str, language: str, source_bytes: Optiona
         symbols = _parse_scss_symbols(source_bytes, filename)
     elif language in ("sass", "less", "styl"):
         symbols = []  # No tree-sitter grammar; files indexed for text search only
+    elif language == "json":
+        symbols = _parse_json_symbols(source_bytes, filename)
     else:
         spec = LANGUAGE_REGISTRY[language]
         symbols = _parse_with_spec(source_bytes, filename, language, spec)
@@ -5163,6 +5165,68 @@ def _parse_css_symbols(source_bytes: bytes, filename: str) -> list[Symbol]:
             if not first_line:
                 continue
             symbols.append(_make(first_line, "type", node, first_line))
+
+    return symbols
+
+
+def _parse_json_symbols(source_bytes: bytes, filename: str) -> list[Symbol]:
+    """Parse JSON files and extract top-level object keys as constants.
+
+    Extracted symbol kind:
+    - Top-level key in the root object → kind "constant"
+      (e.g. ``"name"``, ``"dependencies"``, ``"scripts"`` in package.json)
+
+    Arrays at the root level produce no symbols. Deeply nested keys are
+    intentionally skipped — only root-level keys are extracted to avoid
+    noise in large config files.
+    """
+    try:
+        parser = get_parser("json")
+    except Exception:
+        return []
+
+    tree = parser.parse(source_bytes)
+    symbols: list[Symbol] = []
+
+    # document → object → pair*
+    root = tree.root_node
+    obj = next((c for c in root.children if c.type == "object"), None)
+    if obj is None:
+        return []
+
+    for pair in obj.children:
+        if pair.type != "pair":
+            continue
+        key_node = next((c for c in pair.children if c.type == "string"), None)
+        if key_node is None:
+            continue
+        content_node = next((c for c in key_node.children if c.type == "string_content"), None)
+        key_text = (
+            source_bytes[content_node.start_byte:content_node.end_byte].decode("utf-8", errors="replace")
+            if content_node is not None
+            else source_bytes[key_node.start_byte:key_node.end_byte].decode("utf-8", errors="replace").strip('"')
+        )
+        if not key_text:
+            continue
+        # Build a brief signature: "key": <first-line-of-value>
+        val_src = source_bytes[pair.start_byte:pair.end_byte].decode("utf-8", errors="replace")
+        sig = " ".join(val_src.split())
+        if len(sig) > 100:
+            sig = sig[:97] + "..."
+        symbols.append(Symbol(
+            id=make_symbol_id(filename, key_text, "constant"),
+            file=filename,
+            name=key_text,
+            qualified_name=key_text,
+            kind="constant",
+            language="json",
+            signature=sig,
+            line=pair.start_point[0] + 1,
+            end_line=pair.end_point[0] + 1,
+            byte_offset=pair.start_byte,
+            byte_length=pair.end_byte - pair.start_byte,
+            content_hash=compute_content_hash(source_bytes[pair.start_byte:pair.end_byte]),
+        ))
 
     return symbols
 
