@@ -4,6 +4,11 @@ All notable changes to jcodemunch-mcp are documented here.
 
 ## [Unreleased]
 
+## [1.21.16] - 2026-04-02
+
+### Fixed
+- **Watcher hash-cache double-read race eliminated (T6)** — after each incremental reindex the watcher previously re-read each changed file to compute the new content hash for its in-memory cache. If the file changed again between `index_folder`'s internal read and the watcher's post-reindex re-read, the cache recorded the wrong (newer) hash while the index held the older content. The *next* watchfiles event would then deliver `old_hash=<newer>`, `index_folder` would hash the file, see no difference, and silently skip re-parsing a stale index entry. Fixed by replacing per-file re-reads with a single `_build_hash_cache()` call that reads hashes from the store `index_folder` just wrote — the single authoritative source of truth. Removed the now-dead `_update_hash_cache` / `_remove_from_hash_cache` helpers and the unused `_file_hash` import.
+
 ## [1.21.15] - 2026-04-02
 
 ### Fixed
