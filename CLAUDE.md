@@ -1,7 +1,7 @@
 # jcodemunch-mcp — Project Brief
 
 ## Current State
-- **Version:** 1.21.23 (published to PyPI)
+- **Version:** 1.21.24 (published to PyPI)
 - **INDEX_VERSION:** 7
 - **Tests:** 2009 passed, 5 skipped
 - **Python:** >=3.10
@@ -43,6 +43,7 @@ src/jcodemunch_mcp/
     get_churn_rate.py         # get_churn_rate: git commit count for file or symbol over N days
     get_hotspots.py           # get_hotspots: top-N high-risk symbols by complexity x churn
     get_repo_health.py        # get_repo_health: one-call triage snapshot (delegate aggregator)
+    audit_agent_config.py    # audit_agent_config: token waste audit for CLAUDE.md, .cursorrules, etc.; cross-refs against index
 ```
 
 ## CLI Subcommands

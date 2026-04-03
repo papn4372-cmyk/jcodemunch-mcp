@@ -64,6 +64,7 @@ _CANONICAL_TOOL_NAMES: tuple[str, ...] = (
     "get_symbol_diff", "embed_repo",
     # Utilities
     "get_session_stats", "invalidate_cache", "test_summarizer",
+    "audit_agent_config",
 )
 
 # Tools excluded from strict freshness mode (don't wait for reindex)
@@ -780,6 +781,32 @@ def _build_tools_list() -> list[Tool]:
                         "type": "integer",
                         "description": "Slow-response threshold in ms.",
                         "default": 15000,
+                    },
+                },
+            },
+        ),
+        Tool(
+            name="audit_agent_config",
+            description=(
+                "Audit agent configuration files (CLAUDE.md, .cursorrules, copilot-instructions.md, etc.) "
+                "for token waste. Reports per-file token cost, stale symbol references, dead file paths, "
+                "redundancy between global and project configs, bloat patterns, and scope leaks. "
+                "Cross-references against the jcodemunch index to catch references to renamed or deleted "
+                "symbols and files that no other linter can detect."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "repo": {
+                        "type": "string",
+                        "description": (
+                            "Repository identifier for cross-referencing symbols and files. "
+                            "If omitted, skips stale-reference and dead-path checks."
+                        ),
+                    },
+                    "project_path": {
+                        "type": "string",
+                        "description": "Project directory to scan for config files. Defaults to cwd.",
                     },
                 },
             },
@@ -1857,6 +1884,16 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 functools.partial(
                     test_summarizer,
                     timeout_ms=arguments.get("timeout_ms", 15000),
+                )
+            )
+        elif name == "audit_agent_config":
+            from .tools.audit_agent_config import audit_agent_config
+            result = await asyncio.to_thread(
+                functools.partial(
+                    audit_agent_config,
+                    repo=arguments.get("repo"),
+                    project_path=arguments.get("project_path"),
+                    storage_path=storage_path,
                 )
             )
         elif name == "get_dependency_graph":

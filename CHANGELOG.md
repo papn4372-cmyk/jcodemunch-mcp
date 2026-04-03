@@ -9,6 +9,7 @@ All notable changes to jcodemunch-mcp are documented here.
 ### Added
 - **`jcodemunch-mcp init` subcommand** — one-command onboarding that auto-detects installed MCP clients (Claude Code, Claude Desktop, Cursor, Windsurf, Continue), writes their config entries, injects the Code Exploration Policy into CLAUDE.md, installs worktree lifecycle hooks, and optionally indexes the current directory. Supports `--dry-run`, `--yes` (non-interactive), `--client`, `--claude-md`, `--hooks`, `--index`, and `--no-backup` flags. 27 new tests in `test_init.py`.
 - Updated QUICKSTART.md, README.md, and AGENT_HOOKS.md to lead with `init` as the recommended setup path.
+- **`audit_agent_config` tool** — scans agent config files (CLAUDE.md, .cursorrules, copilot-instructions.md, .windsurfrules, settings.json, etc.) for token waste. Reports per-file token cost, stale symbol references (cross-referenced against the jcodemunch index), dead file paths, redundancy between global and project configs, bloat patterns, and scope leaks. 34 new tests in `test_audit_agent_config.py`.
 
 ## [1.21.23] - 2026-04-02
 

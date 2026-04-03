@@ -183,6 +183,10 @@ Send the model the code it needs, not 1,500 lines of collateral damage.
 
 `find_importers` tells you what imports a file. `get_blast_radius` tells you what breaks if you change a symbol, with depth-weighted risk scores. `get_class_hierarchy` traverses inheritance chains. `find_dead_code` finds symbols and files unreachable from any entry point. `get_changed_symbols` maps a git diff to the exact symbols that were added, modified, or removed. `get_symbol_importance` ranks your codebase by architectural centrality using PageRank on the import graph. These are not "faster grep" — they are questions grep cannot answer at all.
 
+### Agent config hygiene
+
+`audit_agent_config` scans your CLAUDE.md, .cursorrules, copilot-instructions.md, and other agent config files for token waste: per-file token cost, stale symbol references (cross-referenced against the index — catches renamed or deleted functions), dead file paths, redundancy between global and project configs, bloat, and scope leaks. No other tool can tell you "line 15 references a function that was renamed three weeks ago."
+
 ### Better engineering workflows
 
 Useful for onboarding, debugging, refactoring, impact analysis, and exploring unfamiliar repos without brute-force file reading.

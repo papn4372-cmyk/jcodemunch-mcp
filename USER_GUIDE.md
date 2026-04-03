@@ -536,6 +536,7 @@ These IDs stay stable across re-indexing as long as path, qualified name, and ki
 | `list_repos` | List all indexed repositories | — |
 | `resolve_repo` | Resolve a filesystem path to its repo ID — O(1) lookup, preferred over `list_repos` when you know the path | `path` |
 | `invalidate_cache` | Delete cached index and force a full re-index | `repo` |
+| `audit_agent_config` | Audit agent config files (CLAUDE.md, .cursorrules, etc.) for token waste, stale symbol/file references, redundancy, bloat, and scope leaks | `repo`, `project_path` |
 
 ### Discovery & Outlines
 
