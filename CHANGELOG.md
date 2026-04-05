@@ -4,6 +4,12 @@ All notable changes to jcodemunch-mcp are documented here.
 
 ## [Unreleased]
 
+## [1.22.1] - 2026-04-05
+
+### Fixed
+- **streamable-http session persistence** — `run_streamable_http_server` previously created a new `StreamableHTTPServerTransport` (and a new `server.run()` coroutine) for every incoming HTTP request, leaving follow-up calls like `tools/list` hitting an uninitialised session and failing with `-32602 INVALID_PARAMS`. The handler now maintains a session map keyed by `mcp-session-id`: on the first request a background `asyncio.Task` runs `transport.connect()` + `server.run()` for the lifetime of the session, and all subsequent requests from the same client are routed to the existing transport. Terminated sessions (e.g. after DELETE) are cleaned up automatically. Includes a 10-second setup timeout with graceful error response. Closes #204.
+- 9 new tests in `test_streamable_http_sessions.py`.
+
 ## [1.22.0] - 2026-04-05
 
 ### Added

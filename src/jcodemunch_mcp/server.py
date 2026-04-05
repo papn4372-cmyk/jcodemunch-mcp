@@ -2669,8 +2669,8 @@ async def run_sse_server(host: str, port: int):
 async def run_streamable_http_server(host: str, port: int):
     """Run the MCP server with streamable-http transport (persistent HTTP mode)."""
     import sys
+    import uuid
     try:
-        import anyio
         import uvicorn
         from starlette.applications import Starlette
         from starlette.requests import Request
@@ -2680,21 +2680,74 @@ async def run_streamable_http_server(host: str, port: int):
             f"Streamable-http transport requires additional packages: {e}. "
             'Install them with: pip install "jcodemunch-mcp[http]"'
         ) from e
-    from mcp.server.streamable_http import StreamableHTTPServerTransport
+    from mcp.server.streamable_http import StreamableHTTPServerTransport, MCP_SESSION_ID_HEADER
+
+    # Session registry: session_id -> (transport, background_task)
+    # Keeps server.run() alive across multiple HTTP requests from the same client.
+    _sessions: dict[str, StreamableHTTPServerTransport] = {}
+    _session_tasks: dict[str, asyncio.Task] = {}  # type: ignore[type-arg]
 
     async def handle_mcp(request: Request):
-        transport = StreamableHTTPServerTransport(mcp_session_id=None)
-        async with transport.connect() as (read_stream, write_stream):
-            async with anyio.create_task_group() as tg:
-                tg.start_soon(
-                    server.run,
-                    read_stream,
-                    write_stream,
-                    server.create_initialization_options(),
-                )
-                await transport.handle_request(
-                    request.scope, request.receive, request._send
-                )
+        session_id = request.headers.get(MCP_SESSION_ID_HEADER)
+
+        # Route to existing session if client sent a session ID we recognise.
+        if session_id and session_id in _sessions:
+            transport = _sessions[session_id]
+            await transport.handle_request(request.scope, request.receive, request._send)
+            # Clean up terminated sessions (e.g. after DELETE).
+            if transport._terminated:
+                _sessions.pop(session_id, None)
+                task = _session_tasks.pop(session_id, None)
+                if task and not task.done():
+                    task.cancel()
+            return
+
+        # New session — generate a unique ID so the transport enforces it on
+        # all subsequent requests, preventing cross-session pollution.
+        new_id = uuid.uuid4().hex
+        transport = StreamableHTTPServerTransport(mcp_session_id=new_id)
+        _sessions[new_id] = transport
+
+        # streams_ready is set once transport.connect() has initialised its
+        # internal memory streams.  We must wait for it before calling
+        # handle_request(), which writes to those streams.
+        streams_ready: asyncio.Event = asyncio.Event()
+
+        async def _session_runner() -> None:
+            try:
+                async with transport.connect() as (read_stream, write_stream):
+                    streams_ready.set()
+                    await server.run(
+                        read_stream,
+                        write_stream,
+                        server.create_initialization_options(),
+                    )
+            except asyncio.CancelledError:
+                pass
+            finally:
+                _sessions.pop(new_id, None)
+                _session_tasks.pop(new_id, None)
+
+        task = asyncio.create_task(_session_runner())
+        _session_tasks[new_id] = task
+
+        try:
+            # Wait up to 10 s for the transport to be ready.
+            await asyncio.wait_for(streams_ready.wait(), timeout=10.0)
+        except asyncio.TimeoutError:
+            task.cancel()
+            _sessions.pop(new_id, None)
+            _session_tasks.pop(new_id, None)
+            from starlette.responses import Response as StarletteResponse
+            err = StarletteResponse("Session setup timed out", status_code=500)
+            await err(request.scope, request.receive, request._send)
+            return
+
+        try:
+            await transport.handle_request(request.scope, request.receive, request._send)
+        except Exception:
+            task.cancel()
+            raise
 
     middleware = []
     auth_mw = _make_auth_middleware()
