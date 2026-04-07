@@ -3295,38 +3295,53 @@ def _run_config(check: bool = False, init: bool = False, upgrade: bool = False) 
             print(f"  {yellow(WARN)} CLAUDE.md not found: {claude_md_path}")
             print(f"  {dim('  Run: jcodemunch-mcp claude-md --generate > /path/to/CLAUDE.md')}")
 
-        # ── Hook-script drift check ───────────────────────────────────────────
-        section("Hook scripts check")
-        hooks_dir = Path.home() / ".claude" / "hooks"
-        if hooks_dir.exists():
-            read_guards = (
-                list(hooks_dir.glob("jcodemunch_read_guard.sh"))
-                + list(hooks_dir.glob("jcodemunch_read_guard.ps1"))
-            )
-            if read_guards:
-                for _script in sorted(read_guards):
-                    try:
-                        _sc = _script.read_text(encoding="utf-8", errors="replace")
-                        _missing_h = [t for t in canonical_tools if t not in _sc]
-                        if _missing_h:
-                            _wrapped_h = _wrap_names(_missing_h)
-                            print(f"  {yellow(WARN)} {_script.name}: {len(_missing_h)} tool(s) absent from feedback message:")
-                            for _line in _wrapped_h:
-                                print(f"       {dim(_line)}")
-                        else:
-                            print(f"  {green(CHECK)} {_script.name} is current")
-                    except Exception as _e:
-                        print(f"  {yellow(WARN)} {_script.name}: could not read ({_e})")
-            else:
-                print(f"  {dim('(no jcodemunch_read_guard.* hook scripts found)')}")
-            other_hooks = (
-                list(hooks_dir.glob("jcodemunch_edit_guard.*"))
-                + list(hooks_dir.glob("jcodemunch_index_hook.*"))
-            )
-            for _script in sorted(other_hooks):
-                print(f"  {green(CHECK)} {_script.name} present")
+        # ── Hook check ─────────────────────────────────────────────────────────
+        section("Hooks check")
+        _settings_path = Path.home() / ".claude" / "settings.json"
+        _expected_hooks = {
+            "hook-pretooluse": ("PreToolUse", "Read"),
+            "hook-posttooluse": ("PostToolUse", "Edit|Write"),
+            "hook-precompact": ("PreCompact", ""),
+        }
+        if _settings_path.exists():
+            try:
+                _settings = json.loads(_settings_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                _settings = {}
+            _installed_hooks = _settings.get("hooks", {})
+            _found_any = False
+            for _hook_cmd, (_event, _matcher) in _expected_hooks.items():
+                _marker = f"jcodemunch-mcp {_hook_cmd}"
+                _present = False
+                for _rule in _installed_hooks.get(_event, []):
+                    for _h in _rule.get("hooks", []):
+                        if _marker in _h.get("command", ""):
+                            _present = True
+                            break
+                if _present:
+                    _label = f"{_event}({_matcher})" if _matcher else _event
+                    print(f"  {green(CHECK)} {_hook_cmd} installed [{_label}]")
+                    _found_any = True
+                else:
+                    print(f"  {dim(f'  {_hook_cmd} not installed')}")
+            if not _found_any:
+                print(f"  {dim('  Run: jcodemunch-mcp init --hooks')}")
+            # Warn about legacy shell scripts
+            _hooks_dir = Path.home() / ".claude" / "hooks"
+            if _hooks_dir.exists():
+                _legacy = (
+                    list(_hooks_dir.glob("jcodemunch_read_guard.*"))
+                    + list(_hooks_dir.glob("jcodemunch_edit_guard.*"))
+                    + list(_hooks_dir.glob("jcodemunch_index_hook.*"))
+                )
+                if _legacy:
+                    print(f"  {yellow(WARN)} Legacy shell scripts detected (replaced by Python hooks):")
+                    for _script in sorted(_legacy):
+                        print(f"       {dim(_script.name)}")
+                    print(f"       {dim('These can be removed. Run: jcodemunch-mcp init --hooks')}")
         else:
-            print(f"  {dim('(~/.claude/hooks/ not found — hooks not installed)')}")
+            print(f"  {dim('(~/.claude/settings.json not found — hooks not installed)')}")
+            print(f"  {dim('  Run: jcodemunch-mcp init --hooks')}")
 
         print()
         if issues:

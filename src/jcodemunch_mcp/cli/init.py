@@ -392,22 +392,39 @@ def _merge_hooks(
 
     ``marker`` is a substring used to detect whether our hook is already
     installed (e.g. ``"jcodemunch-mcp hook-event"``).
+
+    Each rule is checked individually: if a rule's command already exists
+    in the event's hook list, it is skipped.  This allows multiple rules
+    for the same event to be added incrementally.
     """
     hooks = data.setdefault("hooks", {})
     added: list[str] = []
 
     for event_name, event_hooks in hook_defs.items():
+        existing_cmds: set[str] = set()
         if event_name in hooks:
-            existing_cmds: list[str] = []
             for rule in hooks[event_name]:
                 for h in rule.get("hooks", []):
-                    existing_cmds.append(h.get("command", ""))
-            if any(marker in c for c in existing_cmds):
+                    existing_cmds.add(h.get("command", ""))
+
+        new_rules = []
+        for rule in event_hooks:
+            rule_cmds = [h.get("command", "") for h in rule.get("hooks", [])]
+            # Skip if this specific rule's command is already installed.
+            if any(cmd in existing_cmds for cmd in rule_cmds if cmd):
                 continue
-            hooks[event_name].extend(event_hooks)
-        else:
-            hooks[event_name] = list(event_hooks)
-        added.append(event_name)
+            # Fallback: check against the broad marker for legacy detection.
+            if any(marker in cmd for cmd in existing_cmds):
+                if any(marker in cmd for cmd in rule_cmds):
+                    continue
+            new_rules.append(rule)
+
+        if new_rules:
+            if event_name in hooks:
+                hooks[event_name].extend(new_rules)
+            else:
+                hooks[event_name] = new_rules
+            added.append(event_name)
 
     return added
 

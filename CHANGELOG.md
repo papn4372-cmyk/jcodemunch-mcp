@@ -4,6 +4,13 @@ All notable changes to jcodemunch-mcp are documented here.
 
 ## [Unreleased]
 
+## [1.22.6] - 2026-04-06
+
+### Fixed
+- **`_merge_hooks()` idempotency** — per-rule dedup instead of per-event. Previously, once any jcodemunch PreToolUse hook was installed, no additional PreToolUse rules could be added by `init --hooks`. Now each rule's command is checked individually, allowing incremental hook installation. Cherry-picked from @DrHayt's PR #214.
+- **Worktree hook-event derivation** — Claude Code sends `{cwd, name}` in WorktreeCreate/WorktreeRemove payloads, not `worktreePath`. Derive path as `{cwd}/.claude/worktrees/{name}`. Legacy fields still accepted. Also outputs resolved path on stdout as Claude Code expects. Cherry-picked from @DrHayt's PR #214.
+- **`config --check` hook validation** — now verifies Python hooks in `~/.claude/settings.json` instead of scanning for shell scripts in `~/.claude/hooks/`. Warns about legacy shell scripts if found. Cherry-picked from @DrHayt's PR #214.
+
 ## [1.22.5] - 2026-04-06
 
 ### Added
