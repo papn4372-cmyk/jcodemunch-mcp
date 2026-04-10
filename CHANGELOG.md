@@ -2,6 +2,16 @@
 
 All notable changes to jcodemunch-mcp are documented here.
 
+## [1.26.0] — 2026-04-10
+
+### Added
+- **Unified signal fusion pipeline** (Gap 3 full): new `retrieval/signal_fusion.py` module implements Weighted Reciprocal Rank (WRR) fusion across four channels — lexical (BM25), structural (PageRank), similarity (embeddings), and identity (exact/prefix/segment match). Configurable per-channel weights via `config.jsonc` under `retrieval.fusion_weights`. Eliminates linear score addition in favour of proper rank fusion
+- **`search_symbols(fusion=true)`**: new parameter activates multi-signal fusion ranking. Debug mode (`debug=true`) reports `fusion_score`, `channel_contributions`, and `channel_ranks` per result. `_meta` includes active channels, weights, and smoothing constant
+- **`get_ranked_context(fusion=true)`**: fusion-based context assembly with per-item channel contribution breakdown in results
+- **Post-task diagnostics hook** (Gap 4B): new `hook-taskcomplete` CLI subcommand — on task completion, runs three diagnostics scoped to session-modified files: `find_dead_code` (newly-orphaned symbols), `get_untested_symbols` (untested new code), `check_references` (unreferenced symbols). Injects a compact housekeeping nudge via `systemMessage`
+- **Subagent briefing hook** (Gap 4C): new `hook-subagent-start` CLI subcommand — injects a condensed repo orientation (file/symbol/language stats, top-15 PageRank central symbols, full 40+ tool catalog) for spawned agents. Ensures subagents start with structural context
+- Both new hooks are auto-registered in `~/.claude/settings.json` by `jcodemunch-mcp init` and `config --check` verifies their presence
+
 ## [1.25.0] — 2026-04-10
 
 ### Added

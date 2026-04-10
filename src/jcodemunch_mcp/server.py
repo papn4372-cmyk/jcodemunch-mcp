@@ -655,6 +655,11 @@ def _build_tools_list() -> list[Tool]:
                         "description": "Skip BM25 entirely and rank solely by embedding cosine similarity. Implies semantic=true.",
                         "default": False
                     },
+                    "fusion": {
+                        "type": "boolean",
+                        "description": "Enable multi-signal fusion (Weighted Reciprocal Rank) across lexical, structural, similarity, and identity channels. Produces higher-quality ranking than linear score addition. When True, sort_by is ignored.",
+                        "default": False
+                    },
                     "fqn": {
                         "type": "string",
                         "description": "PHP fully-qualified class name (e.g. 'App\\Models\\User'). Resolves via PSR-4 and uses the class name as query. Alternative to query."
@@ -1629,6 +1634,11 @@ def _build_tools_list() -> list[Tool]:
                         "type": "string",
                         "description": "Optional glob pattern to limit search to a subdirectory (e.g. 'src/core/*').",
                     },
+                    "fusion": {
+                        "type": "boolean",
+                        "description": "Enable multi-signal fusion (Weighted Reciprocal Rank) for ranking. Combines lexical, structural, and identity channels.",
+                        "default": False,
+                    },
                 },
                 "required": ["repo", "query"],
             },
@@ -2095,6 +2105,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                         semantic=arguments.get("semantic", False),
                         semantic_weight=arguments.get("semantic_weight", 0.5),
                         semantic_only=arguments.get("semantic_only", False),
+                        fusion=arguments.get("fusion", False),
                         storage_path=storage_path,
                         fqn=arguments.get("fqn"),
                     )
@@ -2211,6 +2222,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     strategy=arguments.get("strategy", "combined"),
                     include_kinds=arguments.get("include_kinds"),
                     scope=arguments.get("scope"),
+                    fusion=arguments.get("fusion", False),
                     storage_path=storage_path,
                 )
             )
@@ -3536,6 +3548,8 @@ def _run_config(check: bool = False, init: bool = False, upgrade: bool = False) 
             "hook-pretooluse": ("PreToolUse", "Read"),
             "hook-posttooluse": ("PostToolUse", "Edit|Write"),
             "hook-precompact": ("PreCompact", ""),
+            "hook-taskcomplete": ("TaskCompleted", ""),
+            "hook-subagent-start": ("SubagentStart", ""),
         }
         if _settings_path.exists():
             try:
@@ -3900,6 +3914,18 @@ def main(argv: Optional[list[str]] = None):
         help="PreCompact hook: generate session snapshot before context compaction (reads stdin)",
     )
 
+    # --- hook-taskcomplete ---
+    subparsers.add_parser(
+        "hook-taskcomplete",
+        help="TaskCompleted hook: post-task diagnostics — dead code, untested symbols, dangling refs (reads stdin)",
+    )
+
+    # --- hook-subagent-start ---
+    subparsers.add_parser(
+        "hook-subagent-start",
+        help="SubagentStart hook: inject condensed repo orientation for spawned agents (reads stdin)",
+    )
+
     # --- watch-claude ---
     wc_parser = subparsers.add_parser(
         "watch-claude",
@@ -3979,7 +4005,7 @@ def main(argv: Optional[list[str]] = None):
     if any(arg in top_level_flags for arg in raw_argv):
         args = parser.parse_args(raw_argv)
     else:
-        known_commands = {"serve", "watch", "hook-event", "hook-pretooluse", "hook-posttooluse", "hook-precompact", "watch-claude", "config", "index-file", "claude-md", "init", "install-pack"}
+        known_commands = {"serve", "watch", "hook-event", "hook-pretooluse", "hook-posttooluse", "hook-precompact", "hook-taskcomplete", "hook-subagent-start", "watch-claude", "config", "index-file", "claude-md", "init", "install-pack"}
         has_subcommand = any(arg in known_commands for arg in raw_argv if not arg.startswith("-"))
         if not has_subcommand:
             raw_argv = ["serve"] + list(raw_argv)
@@ -4034,6 +4060,14 @@ def main(argv: Optional[list[str]] = None):
     if args.command == "hook-precompact":
         from .cli.hooks import run_precompact
         sys.exit(run_precompact())
+
+    if args.command == "hook-taskcomplete":
+        from .cli.hooks import run_taskcomplete
+        sys.exit(run_taskcomplete())
+
+    if args.command == "hook-subagent-start":
+        from .cli.hooks import run_subagentstart
+        sys.exit(run_subagentstart())
 
     # Apply config defaults for watcher keys: CLI args > config > env vars.
     # config.load_config() is called inside each subcommand handler, but we need

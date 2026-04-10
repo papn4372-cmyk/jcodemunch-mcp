@@ -16,6 +16,8 @@ from jcodemunch_mcp.cli.hooks import (
     run_pretooluse,
     run_posttooluse,
     run_precompact,
+    run_taskcomplete,
+    run_subagentstart,
 )
 
 
@@ -422,3 +424,124 @@ class TestEnforcementHooksInstall:
         assert "would add" in msg
         data = json.loads(settings.read_text(encoding="utf-8"))
         assert "hooks" not in data  # Nothing written
+
+    def test_installs_taskcomplete_and_subagentstart(self, tmp_path):
+        """TaskCompleted and SubagentStart hooks are added."""
+        from jcodemunch_mcp.cli.init import install_enforcement_hooks
+
+        settings = tmp_path / "settings.json"
+        settings.write_text("{}", encoding="utf-8")
+
+        with mock.patch("jcodemunch_mcp.cli.init._settings_json_path", return_value=settings):
+            install_enforcement_hooks(dry_run=False, backup=False)
+
+        data = json.loads(settings.read_text(encoding="utf-8"))
+        hooks = data["hooks"]
+        assert "TaskCompleted" in hooks
+        assert "SubagentStart" in hooks
+        # Verify commands
+        tc_cmd = hooks["TaskCompleted"][0]["hooks"][0]["command"]
+        sa_cmd = hooks["SubagentStart"][0]["hooks"][0]["command"]
+        assert "hook-taskcomplete" in tc_cmd
+        assert "hook-subagent-start" in sa_cmd
+
+
+# ---------------------------------------------------------------------------
+# TaskCompleted tests
+# ---------------------------------------------------------------------------
+
+class TestTaskComplete:
+    """Tests for run_taskcomplete()."""
+
+    def test_empty_stdin(self):
+        """Empty stdin returns exit 0."""
+        rc, out, _ = _run_with_stdin(run_taskcomplete, "")
+        assert rc == 0
+        assert out == ""
+
+    def test_invalid_json(self):
+        """Invalid JSON returns exit 0."""
+        rc, out, _ = _run_with_stdin(run_taskcomplete, "not json")
+        assert rc == 0
+        assert out == ""
+
+    def test_no_edited_files(self, monkeypatch):
+        """No edited files → no output."""
+        mock_journal = mock.MagicMock()
+        mock_journal.get_context.return_value = {"files_edited": [], "files_accessed": []}
+        monkeypatch.setattr("jcodemunch_mcp.cli.hooks.get_journal", lambda: mock_journal, raising=False)
+
+        # Need to import get_journal in hooks context
+        import jcodemunch_mcp.cli.hooks as hooks_mod
+        with mock.patch.object(hooks_mod, "get_journal", create=True, return_value=mock_journal):
+            rc, out, _ = _run_with_stdin(run_taskcomplete, '{"hook_event_name": "TaskCompleted"}')
+        assert rc == 0
+
+    def test_always_returns_zero(self):
+        """Hook must always return 0 to avoid blocking the agent."""
+        rc, _, _ = _run_with_stdin(run_taskcomplete, '{"hook_event_name": "TaskCompleted"}')
+        assert rc == 0
+
+
+# ---------------------------------------------------------------------------
+# SubagentStart tests
+# ---------------------------------------------------------------------------
+
+class TestSubagentStart:
+    """Tests for run_subagentstart()."""
+
+    def test_empty_stdin(self):
+        """Empty stdin returns exit 0."""
+        rc, out, _ = _run_with_stdin(run_subagentstart, "")
+        assert rc == 0
+        assert out == ""
+
+    def test_invalid_json(self):
+        """Invalid JSON returns exit 0."""
+        rc, out, _ = _run_with_stdin(run_subagentstart, "not json")
+        assert rc == 0
+        assert out == ""
+
+    def test_no_repos(self, monkeypatch):
+        """No indexed repos → no output."""
+        MockStore = type("MockStore", (), {
+            "__init__": lambda self, **kw: None,
+            "list_repos": lambda self: [],
+        })
+        monkeypatch.setattr("jcodemunch_mcp.storage.IndexStore", MockStore)
+        rc, out, _ = _run_with_stdin(run_subagentstart, '{"hook_event_name": "SubagentStart"}')
+        assert rc == 0
+        assert out == ""
+
+    def test_with_indexed_repo(self, monkeypatch):
+        """With an indexed repo, produces a briefing with tool catalog."""
+        from jcodemunch_mcp.storage import CodeIndex
+
+        mock_index = mock.MagicMock(spec=CodeIndex)
+        mock_index.symbols = [
+            {"id": "a", "name": "main", "kind": "function", "file": "main.py", "line": 1, "language": "python"},
+        ]
+        mock_index.source_files = ["main.py"]
+        mock_index.imports = {}
+        mock_index.alias_map = None
+
+        MockStore = type("MockStore", (), {
+            "__init__": lambda self, **kw: None,
+            "list_repos": lambda self: [{"owner": "test", "name": "repo"}],
+            "load_index": lambda self, owner, name: mock_index,
+        })
+        monkeypatch.setattr("jcodemunch_mcp.storage.IndexStore", MockStore)
+
+        rc, out, _ = _run_with_stdin(run_subagentstart, '{"hook_event_name": "SubagentStart"}')
+        assert rc == 0
+        if out:
+            result = json.loads(out)
+            assert "systemMessage" in result
+            msg = result["systemMessage"]
+            assert "test/repo" in msg
+            assert "search_symbols" in msg  # Tool catalog
+
+    def test_always_returns_zero(self):
+        """Hook must always return 0 to avoid blocking the agent."""
+        rc, _, _ = _run_with_stdin(run_subagentstart, '{"hook_event_name": "SubagentStart"}')
+        assert rc == 0
