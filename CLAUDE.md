@@ -1,7 +1,7 @@
 # jcodemunch-mcp — Project Brief
 
 ## Current State
-- **Version:** 2.0.0 (published to PyPI)
+- **Version:** 1.32.1 (published to PyPI)
 - **INDEX_VERSION:** 8
 - **Tests:** 2561 passed, 8 skipped
 - **Python:** >=3.10

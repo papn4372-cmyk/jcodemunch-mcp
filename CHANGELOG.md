@@ -2,12 +2,20 @@
 
 All notable changes to jcodemunch-mcp are documented here.
 
-## [2.1.0] — 2026-04-10
+## [1.32.1] — 2026-04-10
+
+### Fixed
+- **`embed_repo` preflight performance** (#231): cache-discovery no longer loads and decodes every stored embedding blob just to get symbol IDs. New `EmbeddingStore.get_all_ids()` queries only the `symbol_id` column. Eliminates unnecessary CPU, memory, and latency on repos with existing embeddings
+
+## [1.32.0] — 2026-04-10
 
 ### Added
 - **`jcodemunch-mcp index` CLI command** ([#230](https://github.com/jgravelle/jcodemunch-mcp/issues/230)): Index a local folder or GitHub repo directly from the terminal. Defaults to the current directory when no target is given — no `init` required. Supports `--no-ai-summaries`, `--follow-symlinks`, and `--extra-ignore` flags
 
-## [2.0.0] — 2026-04-10
+### Changed
+- **Version renumbered from 2.1.0 → 1.32.0.** The 2.0.0 bump was premature — every change from 1.24.4 through 2.1.0 was purely additive (new tools, new opt-in config, new CLI subcommands). Nothing was removed, renamed, or made incompatible. INDEX_VERSION stayed at 8, all config defaults preserved existing behavior, and LSP/dispatch features are off by default. Per semver, additive features are minor bumps. The full renumbering: 1.24.4→1.25.0, 1.24.5→1.26.0, 1.25.0→1.27.0, 1.26.0→1.28.0, 1.27.0→1.29.0, 1.28.0→1.30.0, 2.0.0→1.31.0, 2.1.0→1.32.0. PyPI releases under the old numbers remain installable but are logically equivalent to their renumbered counterparts
+
+## [1.31.0] — 2026-04-10
 
 ### Added
 - **Interface & trait dispatch resolution** (Phase 5 / Gap 2C): resolves interface/trait method calls to their concrete implementations via LSP `textDocument/implementation`. Supports Go interfaces, Rust traits, TypeScript/Java/C#/PHP interfaces and abstract classes. Adds `dispatches_to` edges with `lsp_dispatch` resolution tier
@@ -22,7 +30,7 @@ All notable changes to jcodemunch-mcp are documented here.
 - **`lsp_dispatch_enriched` methodology**: when dispatch edges are present, `_meta.methodology` is `lsp_dispatch_enriched` and `confidence_level` is `high`
 - 31 new tests in `tests/test_dispatch_resolution.py` covering interface keyword detection (15 languages), `goto_implementation` unit tests, `DispatchEdge` dataclass, `_dispatch_callers/_dispatch_callees` with mock indexes, `get_call_hierarchy` dispatches section, graceful degradation, and TS interface keyword propagation through `index_folder`
 
-## [1.28.0] — 2026-04-10
+## [1.30.0] — 2026-04-10
 
 ### Added
 - **LSP Bridge enrichment layer** (Gap 2B): new `enrichment/lsp_bridge.py` module — optional, opt-in integration with language servers for compiler-grade call graph resolution. Manages LSP server lifecycles for pyright (Python), typescript-language-server (TS/JS), gopls (Go), and rust-analyzer (Rust). Strictly additive: if a language server isn't installed, falls back to pure tree-sitter + heuristic with zero behaviour change
@@ -31,7 +39,7 @@ All notable changes to jcodemunch-mcp are documented here.
 - **`enrichment` config block**: new configuration section in config.jsonc — `enrichment.lsp_enabled` (default `false`), `enrichment.lsp_servers` (per-language server map), `enrichment.lsp_timeout_seconds` (default 30). Supports both global and per-project config
 - 40 new tests in `tests/test_lsp_bridge.py` covering JSON-RPC helpers, server lifecycle, graceful degradation, call graph integration, config helpers, and index_folder integration
 
-## [1.27.0] — 2026-04-10
+## [1.29.0] — 2026-04-10
 
 ### Added
 - **Bundled ONNX local encoder** (Gap 1): new `embeddings/local_encoder.py` module ships a zero-config embedding provider using `all-MiniLM-L6-v2` (Apache 2.0, 384-dim, ~23 MB). Install via `pip install 'jcodemunch-mcp[local-embed]'` — no API keys, no internet after first download, no configuration. Includes a minimal WordPiece tokenizer (no `transformers` dependency) and L2-normalised mean-pooled output
@@ -39,7 +47,7 @@ All notable changes to jcodemunch-mcp are documented here.
 - **`download-model` CLI subcommand**: `jcodemunch-mcp download-model` fetches the ONNX model + vocab from HuggingFace to `~/.code-index/models/all-MiniLM-L6-v2/`. Auto-downloads on first `embed_repo` call if model is missing. Override path via `JCODEMUNCH_LOCAL_EMBED_MODEL` env var or `--target-dir` flag
 - **`[local-embed]` install extra**: `pip install 'jcodemunch-mcp[local-embed]'` adds `onnxruntime>=1.16.0` dependency
 
-## [1.26.0] — 2026-04-10
+## [1.28.0] — 2026-04-10
 
 ### Added
 - **Unified signal fusion pipeline** (Gap 3 full): new `retrieval/signal_fusion.py` module implements Weighted Reciprocal Rank (WRR) fusion across four channels — lexical (BM25), structural (PageRank), similarity (embeddings), and identity (exact/prefix/segment match). Configurable per-channel weights via `config.jsonc` under `retrieval.fusion_weights`. Eliminates linear score addition in favour of proper rank fusion
@@ -49,19 +57,19 @@ All notable changes to jcodemunch-mcp are documented here.
 - **Subagent briefing hook** (Gap 4C): new `hook-subagent-start` CLI subcommand — injects a condensed repo orientation (file/symbol/language stats, top-15 PageRank central symbols, full 40+ tool catalog) for spawned agents. Ensures subagents start with structural context
 - Both new hooks are auto-registered in `~/.claude/settings.json` by `jcodemunch-mcp init` and `config --check` verifies their presence
 
-## [1.25.0] — 2026-04-10
+## [1.27.0] — 2026-04-10
 
 ### Added
 - **PreCompact structural landmarks** (Gap 4A): `run_precompact()` now enriches the session snapshot with PageRank-ranked top-20 central symbols and recently-changed symbols from the session journal. Gives the LLM a structural "table of contents" that survives context compaction
 - **Per-edge resolution tiers** (Gap 2A): every edge in `get_call_hierarchy` callers/callees now carries a `resolution` field — `ast_resolved` (direct tree-sitter match), `ast_inferred` (resolved via import graph), or `text_matched` (heuristic word-boundary fallback). `_meta.resolution_tiers` summarises the tier distribution
 - **Identity channel in search** (Gap 3 partial): `search_symbols` replaces the old `50.0` exact-name hack with a proper identity scoring channel — exact match (50), prefix match (30), qualified-ID segment match (20). Debug mode (`debug=true`) now reports `identity` score and `identity_type` in the per-field breakdown
 
-## [1.24.5] — 2026-04-10
+## [1.26.0] — 2026-04-10
 
 ### Added
 - **Guided workflow prompts**: 4 new MCP prompt templates alongside the existing `workflow` prompt — `explore` (onboard to an unfamiliar repo), `assess` (pre-merge impact analysis), `triage` (diagnose code quality), `trace` (investigate a bug through the call graph). Each composes existing jcodemunch tools into a step-by-step workflow. Accessible via the MCP prompt protocol (`list_prompts` / `get_prompt`)
 
-## [1.24.4] — 2026-04-10
+## [1.25.0] — 2026-04-10
 
 ### Added
 - **`get_untested_symbols`**: new tool — find functions and methods with no evidence of test-file reachability. Uses import-graph analysis + name matching (AST call_references when available, word-boundary text heuristic as fallback). Classifies symbols as "unreached" (no test imports the source file) or "imported_not_called" (test imports the module but no test references this specific function). Supports `file_pattern` glob filter, `min_confidence` threshold, and `max_results` cap

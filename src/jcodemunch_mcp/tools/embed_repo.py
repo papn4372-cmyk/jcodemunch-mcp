@@ -273,7 +273,7 @@ def embed_repo(
         emb_store.clear()
         symbols_to_embed = list(index.symbols)
     else:
-        existing_ids = set(emb_store.get_all().keys())
+        existing_ids = emb_store.get_all_ids()
         symbols_to_embed = [s for s in index.symbols if s["id"] not in existing_ids]
 
     if not symbols_to_embed:
