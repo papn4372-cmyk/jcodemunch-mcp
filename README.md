@@ -571,6 +571,29 @@ Start with **[QUICKSTART.md](QUICKSTART.md)** for the fastest setup path.
 
 Then index a repo, ask your agent what it has indexed, and have it retrieve code by symbol instead of reading entire files. That is where the savings start.
 
+## Works with
+
+jCodeMunch plugs into any MCP-compatible agent or IDE. Tested configurations:
+
+| Platform | Config |
+|----------|--------|
+| **Claude Code / Claude Desktop** | `jcodemunch-mcp init` (auto-detects and patches config) |
+| **Cursor / Windsurf** | `jcodemunch-mcp init` or manual `mcp.json` |
+| **[Hermes Agent](https://github.com/NousResearch/hermes-agent)** | Add to `~/.hermes/config.yaml` — see [skill](https://github.com/NousResearch/hermes-agent/pull/10413) |
+| **Any MCP client** | stdio: `jcodemunch-mcp`, HTTP: `jcodemunch-mcp serve --transport sse` |
+
+<details>
+<summary>Hermes Agent config</summary>
+
+```yaml
+# ~/.hermes/config.yaml
+mcp_servers:
+  jcodemunch:
+    command: "uvx"
+    args: ["jcodemunch-mcp"]
+```
+</details>
+
 ## Star History
 
 <a href="https://www.star-history.com/?repos=jgravelle%2Fjcodemunch-mcp&type=date&legend=top-left">
