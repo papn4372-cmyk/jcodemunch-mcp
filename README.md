@@ -506,7 +506,7 @@ Project config merges over global config — closest to the work wins.
 
 | Config key | What it controls | Typical savings |
 |-----------|-----------------|----------------|
-| `tool_profile` | `"core"` (16 tools), `"standard"` (~40), `"full"` (all, default) | ~5-6k tokens (core) |
+| `tool_profile` | `"core"` (16 tools), `"standard"` (51), `"full"` (62, default) | ~5-6k tokens (core) |
 | `compact_schemas` | Strip rarely-used advanced params from schemas | ~1-2k tokens |
 | `disabled_tools` | Remove individual tools from schema entirely | ~100–400 tokens/tool |
 | `languages` | Shrink language enum + gate features | ~2–86 tokens/turn |
@@ -519,15 +519,15 @@ See the full template for all available keys. Run `jcodemunch-mcp config --init`
 
 ### Tool Tiering
 
-jcodemunch-mcp exposes 80+ tools. On request-capped plans, having all of them visible to small models causes primitive-preference bias (many `search → read → search → read` cycles instead of one `get_context_bundle`). The server mitigates this by narrowing the exposed tool list per the running model.
+jcodemunch-mcp exposes 60+ tools. On request-capped plans, having all of them visible to small models causes primitive-preference bias (many `search → read → search → read` cycles instead of one `get_context_bundle`). The server mitigates this by narrowing the exposed tool list per the running model.
 
 #### Tiers (configurable)
 
 Three tiers ship with sensible defaults, fully editable in `config.jsonc`:
 
-- `core` (~16 tools): indexing, search, retrieval. Recommended for Haiku / small local models.
-- `standard` (~51 tools): core + analytics / architecture / quality. Recommended for Sonnet / GPT-4o class.
-- `full` (all tools): no filter. Recommended for Opus / o1 / frontier models.
+- `core` (16 tools): indexing, search, retrieval. Recommended for Haiku / small local models.
+- `standard` (51 tools): core + analytics / architecture / quality. Recommended for Sonnet / GPT-4o class.
+- `full` (all 62 tools): no filter. Recommended for Opus / o1 / frontier models.
 
 Edit `tool_tier_bundles.core` / `tool_tier_bundles.standard` in your `config.jsonc` to add or remove tools from each tier.
 

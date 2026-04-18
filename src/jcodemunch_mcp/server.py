@@ -73,6 +73,8 @@ _CANONICAL_TOOL_NAMES: tuple[str, ...] = (
     # Utilities
     "get_session_stats", "get_session_context", "get_session_snapshot", "plan_turn", "register_edit", "invalidate_cache", "test_summarizer",
     "audit_agent_config",
+    # Runtime tier switching
+    "set_tool_tier", "announce_model",
     # Composite retrieval
     "winnow_symbols",
 )
@@ -4118,6 +4120,7 @@ def _generate_claude_md_snippet(missing_only: bool = False) -> str:
         ("Session-Aware Routing", ["plan_turn", "get_session_context", "get_session_snapshot", "register_edit"]),
         ("Utilities", ["get_session_stats", "invalidate_cache", "test_summarizer",
                         "audit_agent_config"]),
+        ("Runtime Tier Switching", ["set_tool_tier", "announce_model"]),
     ]
     from . import __version__ as _ver
     lines = [

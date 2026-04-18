@@ -1242,3 +1242,58 @@ async def test_tool_tier_bundles_config_override():
     finally:
         config_module._GLOBAL_CONFIG.clear()
         config_module._GLOBAL_CONFIG.update(orig_config)
+
+
+def test_all_canonical_tools_accounted_in_tier_bundles():
+    """Every tool in _CANONICAL_TOOL_NAMES must appear in at least one tier bundle
+    (core or standard) or be explicitly listed as a known full-tier-only tool.
+
+    This test fails when a new tool is added to the server but not placed in
+    any tier bundle — forcing the developer to consciously decide which tier
+    it belongs to.
+    """
+    from jcodemunch_mcp.server import _CANONICAL_TOOL_NAMES
+    from jcodemunch_mcp.config import DEFAULTS
+
+    bundles = DEFAULTS["tool_tier_bundles"]
+    core_set = set(bundles.get("core", []))
+    std_set = set(bundles.get("standard", []))
+    bundled = core_set | std_set
+
+    # Tools that are intentionally full-tier-only (not in core or standard).
+    # When adding a new tool, either put it in a bundle OR add it here with
+    # a comment explaining why it's full-only.
+    known_full_only = {
+        # Power-user refactoring / session tools
+        "plan_refactoring",
+        "audit_agent_config",
+        "get_extraction_candidates",
+        # Session state tools (rarely needed in constrained tiers)
+        "get_session_stats",
+        "get_session_context",
+        "get_session_snapshot",
+        # Diagnostic / write tools
+        "test_summarizer",
+        "register_edit",
+        # Runtime tier-switching tools (force-included regardless of tier)
+        "set_tool_tier",
+        "announce_model",
+        # Core planning tool (too expensive for core tier)
+        "plan_turn",
+    }
+
+    canonical = set(_CANONICAL_TOOL_NAMES)
+    unaccounted = canonical - bundled - known_full_only
+
+    assert not unaccounted, (
+        f"Tools missing from tier bundles and not in known_full_only: {unaccounted}. "
+        f"Add each to tool_tier_bundles.core/standard in config.py DEFAULTS, "
+        f"or add to known_full_only in this test with an explanation."
+    )
+
+    # Also verify no known_full_only tool is actually in a bundle (stale entry)
+    stale = known_full_only & bundled
+    assert not stale, (
+        f"Tools in known_full_only but also in a tier bundle (stale): {stale}. "
+        f"Remove them from known_full_only in this test."
+    )
